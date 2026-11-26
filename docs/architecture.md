@@ -82,6 +82,16 @@ Foreign keys are enforced per connection with `PRAGMA foreign_keys = ON`, since 
 | Frontend API target | `VITE_API_PROXY_TARGET` in `frontend/.env.local` | Defaults to `http://127.0.0.1:5000`. |
 | CORS | `CORS_ORIGINS` | Defaults to the Vite dev origins. Only `/api/*` is opened. |
 
+## 5a. Demo role access (US-01)
+
+- **Sample accounts:** `init_db` seeds three rows into the existing `users` table (`demo.farmer`, `demo.distributor`, `demo.retailer`). No schema change or new table is involved, and seeding is idempotent.
+- **Role constants:** `app/models/roles.py` defines the supported roles, labels, sample accounts and role-specific actions. `app/services/access_service.py` validates roles and looks up sample accounts.
+- **Session:** `POST /api/session` stores `{role, user_id, display_name}` in Flask's signed session cookie (HTTP-only, `SameSite=Lax`). `DELETE /api/session` clears it.
+- **Enforcement:** `app/auth.py` reads the role from the signed cookie on every request. The `require_role(...)` decorator returns `401` without a session and `403` for a disallowed role. The frontend never sends a role to a protected endpoint; it only receives what the server returns.
+- **Frontend:** `useDemoSession` (in `src/hooks/`) mirrors the server session. `App` shows the role-selection screen (`DashboardPage`) when no role is active, or the role workspace (`RoleWorkspacePage`) with the active-role badge and **Exit session** otherwise.
+
+Limitations are listed in the README under "Demo role access". This is a demonstration switch, not authentication.
+
 ## 6. Planned extensions (not in this foundation)
 
 - **Blockchain:** a Python local blockchain will append to `ledger_blocks` using SHA-256 hashes linking each block to `previous_hash`.
@@ -90,6 +100,6 @@ Foreign keys are enforced per connection with `PRAGMA foreign_keys = ON`, since 
 
 ## 7. Known limitations
 
-- Single-user local setup; no authentication or authorisation.
+- Single-user local setup. Demo role access is a role selector without passwords or authentication (see section 5a).
 - SQLite single-writer model; suitable for the prototype only.
 - No migrations tool yet. Schema changes will be introduced with the feature stories that need them.

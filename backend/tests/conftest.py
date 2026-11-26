@@ -11,7 +11,14 @@ def db_path(tmp_path):
 
 @pytest.fixture
 def app(db_path):
-    application = create_app({"TESTING": True, "DATABASE_PATH": db_path, "APP_NAME": "Test App"})
+    application = create_app(
+        {
+            "TESTING": True,
+            "DATABASE_PATH": db_path,
+            "APP_NAME": "Test App",
+            "SECRET_KEY": "test-secret-key-not-for-production",
+        }
+    )
     init_db(db_path)
     return application
 

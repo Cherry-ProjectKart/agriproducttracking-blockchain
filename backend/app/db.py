@@ -5,6 +5,8 @@ from pathlib import Path
 
 from flask import Flask, current_app, g
 
+from app.services.access_service import seed_demo_users
+
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 
 EXPECTED_TABLES = ("users", "product_batches", "supply_chain_events", "ledger_blocks")
@@ -33,12 +35,16 @@ def close_db(_error: BaseException | None = None) -> None:
 
 
 def init_db(database_path: str) -> list[str]:
-    """Create the database file (if needed) and apply the schema. Returns the created table names."""
+    """Create the database file (if needed), apply the schema and seed demo accounts.
+
+    Returns the table names. Safe to run repeatedly.
+    """
     Path(database_path).parent.mkdir(parents=True, exist_ok=True)
     schema = SCHEMA_PATH.read_text(encoding="utf-8")
     conn = connect(database_path)
     try:
         conn.executescript(schema)
+        seed_demo_users(conn)
         conn.commit()
     finally:
         conn.close()
