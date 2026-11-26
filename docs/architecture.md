@@ -58,7 +58,7 @@ The application is created by a factory (`create_app`) so tests can supply their
 ```text
 users 1 ──── * product_batches 1 ──── * supply_chain_events
   │
-  └─ created_by                           ledger_blocks (chain of blocks, no writer yet)
+  └─ created_by                           ledger_blocks (hash-linked chain, written at registration)
 ```
 
 | Table | Key constraints |
@@ -66,7 +66,7 @@ users 1 ──── * product_batches 1 ──── * supply_chain_events
 | `users` | PK `id`; `username` UNIQUE; `role` ∈ {farmer, distributor, retailer} |
 | `product_batches` | PK `id`; `batch_code` UNIQUE batch ID (`PB-XXXX-XXXX`, required by trigger); `client_request_id` UNIQUE (idempotency key, nullable); `quantity` > 0; FK `created_by` → `users.id` (RESTRICT) |
 | `supply_chain_events` | PK `id`; FK `batch_id` → `product_batches.id` (CASCADE); `actor_role` constrained to the three roles |
-| `ledger_blocks` | PK `id`; `block_index` UNIQUE ≥ 0; `block_hash` UNIQUE |
+| `ledger_blocks` | PK `id`; `block_index` UNIQUE ≥ 0; `block_hash` UNIQUE; `event_id` → `supply_chain_events.id`, UNIQUE (one block per event; BPT-005) |
 
 Indexes: `users(role)`, `product_batches(created_by)`, `product_batches(current_status)`, `supply_chain_events(batch_id, event_timestamp)`.
 
@@ -118,9 +118,19 @@ Limitations are listed in the README under "Demo role access". This is a demonst
 - **Frontend:** `BatchQrCode` shows the image, the tracking URL and a download link. `BatchDetails` shows the batch ID. `BatchList` shows the ID and opens a batch's QR code.
 - **Scope:** the `/track/<batch ID>` page belongs to US-08. Until it is built, the URL opens the app's start page.
 
+## 5d. Local hash-linked ledger (US-04)
+
+- **Storage:** `ledger_blocks` (`block_index`, `timestamp`, `event_payload` as canonical JSON, `previous_hash`, `block_hash`, and `event_id`). Only `event_id` is new, added by `ensure_ledger_event_reference` with a UNIQUE index.
+- **Service:** `services/ledger_service.py` contains canonical JSON, hashing, genesis creation, `append_block`, lookups, chronological listing and the backfill. It does not import Flask.
+- **Hash:** SHA-256 over the UTF-8 bytes of `{"event_data":<payload as JSON string>,"index":<n>,"previous_hash":"<hex>","timestamp":"<ISO>"}`, with sorted keys and compact separators. The block's own hash is not part of the input. Genesis is block 0, with timestamp `1970-01-01T00:00:00.000Z`, event data `{"event_type":"GENESIS"}` and 64 zero characters as the previous hash.
+- **Registration:** `batch_service.register_batch` writes the batch, its event and the block in one transaction. `BEGIN IMMEDIATE` is used unless the caller already has a transaction open. Any failure rolls back everything.
+- **Backfill:** `backfill_registration_ledger` adds a block to each `PRODUCT_REGISTERED` event that has none, in event-time order. Blocks use the event's time. The step is repeatable.
+- **Read path:** `routes/ledger.py` exposes read-only endpoints to any active demo session. No endpoint writes to the ledger.
+- **Frontend:** `LedgerView` (in every workspace) lists the blocks.
+- **Scope:** verification of the chain (US-07) is not implemented. The hashes are shown so the chain can be checked by hand.
+
 ## 6. Planned extensions (not in this foundation)
 
-- **Blockchain:** a Python local blockchain will append to `ledger_blocks` using SHA-256 hashes linking each block to `previous_hash`.
 - **QR codes:** the Python `qrcode` library will generate codes that reference a batch.
 - **Feature APIs:** new blueprints under `app/routes/` with matching services; the frontend adds pages and service modules alongside the existing ones.
 

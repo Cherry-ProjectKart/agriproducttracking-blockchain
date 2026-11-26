@@ -8,8 +8,10 @@ from flask import Flask, current_app, g
 from app.migrations import (
     backfill_batch_ids,
     complete_product_batches_upgrade,
+    ensure_ledger_event_reference,
     retire_outdated_product_batches,
 )
+from app.services.ledger_service import backfill_registration_ledger, ensure_genesis
 from app.services.access_service import seed_demo_users
 
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
@@ -52,6 +54,10 @@ def init_db(database_path: str) -> list[str]:
         conn.executescript(schema)
         complete_product_batches_upgrade(conn)
         backfill_batch_ids(conn)
+        ensure_ledger_event_reference(conn)
+        ensure_genesis(conn)
+        conn.commit()
+        backfill_registration_ledger(conn)
         seed_demo_users(conn)
         conn.commit()
     finally:

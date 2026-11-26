@@ -63,11 +63,15 @@ CREATE TABLE IF NOT EXISTS supply_chain_events (
 CREATE INDEX IF NOT EXISTS idx_supply_chain_events_batch_time
     ON supply_chain_events (batch_id, event_timestamp);
 
+-- Hash-linked ledger (US-04). event_id links a block to the supply-chain event it records.
+-- Its UNIQUE index (idx_ledger_blocks_event_id) is created by app/migrations.py, so that
+-- databases created before BPT-005 can be upgraded with ALTER TABLE.
 CREATE TABLE IF NOT EXISTS ledger_blocks (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     block_index   INTEGER NOT NULL UNIQUE CHECK (block_index >= 0),
     timestamp     TEXT    NOT NULL,
     event_payload TEXT    NOT NULL,
     previous_hash TEXT    NOT NULL,
-    block_hash    TEXT    NOT NULL UNIQUE CHECK (length(block_hash) > 0)
+    block_hash    TEXT    NOT NULL UNIQUE CHECK (length(block_hash) > 0),
+    event_id      INTEGER REFERENCES supply_chain_events (id) ON DELETE RESTRICT
 );

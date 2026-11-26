@@ -100,14 +100,15 @@ def test_ledger_block_hash_is_unique(db_path):
     init_db(db_path)
     conn = _connect(db_path)
     try:
+        # init_db creates the genesis block at index 0, so these test rows use other indices.
         conn.execute(
             "INSERT INTO ledger_blocks (block_index, timestamp, event_payload, previous_hash, block_hash) "
-            "VALUES (0, '2026-01-01T00:00:00Z', '{}', '0', 'abc')"
+            "VALUES (1000, '2026-01-01T00:00:00Z', '{}', '0', 'abc')"
         )
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(
                 "INSERT INTO ledger_blocks (block_index, timestamp, event_payload, previous_hash, block_hash) "
-                "VALUES (1, '2026-01-01T00:00:01Z', '{}', 'abc', 'abc')"
+                "VALUES (1001, '2026-01-01T00:00:01Z', '{}', 'abc', 'abc')"
             )
     finally:
         conn.close()
