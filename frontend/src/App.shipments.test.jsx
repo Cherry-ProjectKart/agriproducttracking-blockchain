@@ -26,6 +26,11 @@ vi.mock('./services/batchService.js', async (importOriginal) => ({
   createBatch: vi.fn(),
 }));
 
+vi.mock('./services/receiptService.js', () => ({
+  fetchAwaitingReceipts: vi.fn().mockResolvedValue([]),
+  confirmReceipt: vi.fn(),
+}));
+
 vi.mock('./services/ledgerService.js', () => ({
   fetchLedger: vi.fn().mockResolvedValue({ count: 0, latest: null, blocks: [] }),
 }));

@@ -33,5 +33,5 @@ DEMO_ACCOUNTS: Final[dict[str, tuple[str, str]]] = {
 ROLE_ACTIONS: Final[dict[str, tuple[tuple[str, str, bool], ...]]] = {
     "farmer": (("register_batch", "Register product batch", True),),
     "distributor": (("record_shipment", "Record shipment update", True),),
-    "retailer": (("confirm_receipt", "Confirm receipt of batch", False),),
+    "retailer": (("confirm_receipt", "Confirm receipt of batch", True),),
 }

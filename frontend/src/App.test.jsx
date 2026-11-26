@@ -26,6 +26,11 @@ vi.mock('./services/shipmentService.js', () => ({
 }));
 
 // Every workspace shows the local ledger; keep it off the network in these tests.
+vi.mock('./services/receiptService.js', () => ({
+  fetchAwaitingReceipts: vi.fn().mockResolvedValue([]),
+  confirmReceipt: vi.fn(),
+}));
+
 vi.mock('./services/ledgerService.js', () => ({
   fetchLedger: vi.fn().mockResolvedValue({ count: 0, latest: null, blocks: [] }),
 }));

@@ -7,6 +7,8 @@ const LOAD_ERROR = 'Could not load the ledger. Make sure the backend is running.
 const EVENT_LABELS = {
   GENESIS: 'Ledger start',
   PRODUCT_REGISTERED: 'Product registered',
+  SHIPMENT_UPDATED: 'Shipment updated',
+  RECEIPT_CONFIRMED: 'Receipt confirmed',
 };
 
 /**
