@@ -28,7 +28,7 @@ _HISTORY_LABELS = {
 def batch_history(conn: sqlite3.Connection, batch_code: str) -> dict[str, Any] | None:
     """The batch and its chronological event history, or None if no batch has this ID."""
     batch = conn.execute(
-        "SELECT id, batch_code, product_name, current_status FROM product_batches WHERE batch_code = ?",
+        "SELECT id, batch_code, product_name, origin, current_status FROM product_batches WHERE batch_code = ?",
         (batch_code,),
     ).fetchone()
     if batch is None:
@@ -64,6 +64,7 @@ def batch_history(conn: sqlite3.Connection, batch_code: str) -> dict[str, Any] |
         "batch": {
             "batch_id": batch["batch_code"],
             "product_name": batch["product_name"],
+            "origin": batch["origin"],
             "current_status": batch["current_status"],
         },
         "count": len(events),

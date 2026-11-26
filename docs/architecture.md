@@ -116,7 +116,7 @@ Limitations are listed in the README under "Demo role access". This is a demonst
 - **Tracking URL:** `{TRACKING_BASE_URL}/track/{batch ID}`, built in `services/qr_service.py`. `TRACKING_BASE_URL` (default `http://localhost:5173`) is validated at startup.
 - **QR code:** PNG, error-correction level M, generated on request by `segno` and served from `GET /api/batches/<id>/qr.png` to the owning farmer only. Nothing is stored. The image encodes only the tracking URL.
 - **Frontend:** `BatchQrCode` shows the image, the tracking URL and a download link. `BatchDetails` shows the batch ID. `BatchList` shows the ID and opens a batch's QR code.
-- **Scope:** the `/track/<batch ID>` page belongs to US-08. Until it is built, the URL opens the app's start page.
+- **Scope:** the `/track/<batch ID>` page is the public consumer page of US-08 (section 5h).
 
 ## 5d. Local hash-linked ledger (US-04)
 
@@ -156,6 +156,15 @@ Limitations are listed in the README under "Demo role access". This is a demonst
 - **Result:** `result` is `valid` only when no check fails. Each failure names the block index (or none, for ledger-wide problems), the check and a reason.
 - **Frontend:** `BatchHistoryPanel` and `LedgerVerificationPanel` appear in every workspace. Neither loads anything until the user acts, and Valid or Invalid is shown only after the server has answered.
 - **Scope:** no schema change and no new role. The consumer tracking page (US-08) is not part of this story.
+
+## 5h. Consumer QR tracking (US-08)
+
+- **Public endpoint:** `GET /api/tracking/<batch ID>` (`routes/tracking.py`) has no role guard. `services/public_tracking.py` reuses the BPT-008 `batch_history` service and keeps only a whitelist of fields (batch ID, product name, origin, current status; for each event type, label, actor role, status, note, timestamp and ledger block index). Internal row IDs, users and request keys are not returned. The endpoint accepts only `GET`.
+- **Frontend routing:** `Root.jsx` chooses the page from the address. `/track/<batch ID>` renders `ConsumerTrackingPage`, which is standalone and does not load the session, role or workspace code. Every other address renders the application as before. The router is a single path check (`utils/routes.js`), with no routing library.
+- **Read-only page:** the page has no buttons, forms, inputs or links. A test checks this.
+- **QR path:** unchanged from BPT-004. The QR encodes `{TRACKING_BASE_URL}/track/{batch ID}`, and the decoded URL is verified by a test against the real PNG.
+- **Schema:** no change. The history service gained the origin in its batch summary, an additive change.
+- **Network:** the frontend (Vite, port 5173) serves the page and proxies `/api`. Flask stays on 127.0.0.1. Scanning from another device needs `TRACKING_BASE_URL` set to the host's LAN address and the dev server started with `--host`.
 
 ## 6. Planned extensions (not in this foundation)
 
