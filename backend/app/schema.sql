@@ -1,0 +1,52 @@
+-- SQLite schema for the Blockchain Product Tracking foundation.
+-- Idempotent: safe to run repeatedly (IF NOT EXISTS everywhere).
+-- Foreign key enforcement is enabled per connection in app/db.py (PRAGMA foreign_keys = ON).
+
+CREATE TABLE IF NOT EXISTS users (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    display_name TEXT    NOT NULL CHECK (length(trim(display_name)) > 0),
+    username     TEXT    NOT NULL UNIQUE CHECK (length(trim(username)) > 0),
+    role         TEXT    NOT NULL CHECK (role IN ('farmer', 'distributor', 'retailer')),
+    created_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_role ON users (role);
+
+CREATE TABLE IF NOT EXISTS product_batches (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_code     TEXT    NOT NULL UNIQUE CHECK (length(trim(batch_code)) > 0),
+    product_name   TEXT    NOT NULL CHECK (length(trim(product_name)) > 0),
+    description    TEXT,
+    quantity       REAL    NOT NULL CHECK (quantity > 0),
+    unit           TEXT    NOT NULL CHECK (length(trim(unit)) > 0),
+    origin         TEXT    NOT NULL CHECK (length(trim(origin)) > 0),
+    harvest_date   TEXT    NOT NULL,
+    current_status TEXT    NOT NULL DEFAULT 'CREATED',
+    created_by     INTEGER NOT NULL REFERENCES users (id) ON DELETE RESTRICT,
+    created_at     TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_batches_created_by ON product_batches (created_by);
+CREATE INDEX IF NOT EXISTS idx_product_batches_status ON product_batches (current_status);
+
+CREATE TABLE IF NOT EXISTS supply_chain_events (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id        INTEGER NOT NULL REFERENCES product_batches (id) ON DELETE CASCADE,
+    event_type      TEXT    NOT NULL CHECK (length(trim(event_type)) > 0),
+    actor_role      TEXT    NOT NULL CHECK (actor_role IN ('farmer', 'distributor', 'retailer')),
+    status          TEXT    NOT NULL CHECK (length(trim(status)) > 0),
+    note            TEXT,
+    event_timestamp TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_supply_chain_events_batch_time
+    ON supply_chain_events (batch_id, event_timestamp);
+
+CREATE TABLE IF NOT EXISTS ledger_blocks (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    block_index   INTEGER NOT NULL UNIQUE CHECK (block_index >= 0),
+    timestamp     TEXT    NOT NULL,
+    event_payload TEXT    NOT NULL,
+    previous_hash TEXT    NOT NULL,
+    block_hash    TEXT    NOT NULL UNIQUE CHECK (length(block_hash) > 0)
+);
