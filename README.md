@@ -2,7 +2,7 @@
 
 A blockchain-enabled system for tracing agricultural products from farm to retail. Every supply-chain event is recorded in a tamper-evident ledger so that a product's journey can be verified by farmers, distributors, retailers and consumers.
 
-> **Status:** local hash-linked ledger (BPT-005, US-04) on top of unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001). Shipment updates, receipt confirmation, ledger verification and the consumer tracking page are not implemented yet.
+> **Status:** distributor shipment updates (BPT-006, US-05) on top of the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001). Retailer receipt confirmation, ledger verification and the consumer tracking page are not implemented yet.
 
 ## Technology stack
 
@@ -356,7 +356,7 @@ SRS section 7.2 requires each supported event to be in the ledger. Registrations
 - The `event_id` column and its UNIQUE index are added to `ledger_blocks` with `ALTER TABLE`. The existing rows are kept.
 - The genesis block is created if the ledger is empty.
 - Each `PRODUCT_REGISTERED` event with no block receives one, processed by event time and then event id. The block uses the event's own timestamp, so the chain follows the order events happened.
-- Other event types do not get blocks.
+- Only registration events are backfilled. Shipment events get their block when they are recorded (BPT-006).
 - Running the script again creates nothing. The local database was checked on a copy: 5 existing registrations became 5 blocks after genesis, with valid hashes and links.
 
 ### Ledger API (read-only)
@@ -381,6 +381,73 @@ The workspace for every role has a **Local ledger** table showing the block numb
 - **Does not:** prove that the recorded product facts are true. Hashing shows the record did not change, not that the farmer's information was correct.
 - **Does not:** provide decentralised immutability. The chain lives in one local SQLite database. Anyone with write access to that file could rewrite the whole chain, and the ledger has no independent copies or consensus. The SRS says this explicitly.
 - No wallets, tokens, mining, consensus or public network are involved.
+
+## Distributor shipment updates (US-05)
+
+A distributor records the shipment or movement status of a registered batch. Each update changes the batch's status, adds a shipment event, and adds a block to the local ledger.
+
+### Workflow
+
+1. Choose **Distributor** on the role screen. The workspace lists every registered batch with its batch ID, product, origin, quantity and current status.
+2. Select a batch.
+3. Choose a shipment status and, optionally, add a short note.
+4. Select **Save shipment update**. The button shows *Saving…* until the server answers.
+5. On success, the confirmation shows the new status, the ledger block number, the event time and the block hash. The batch list refreshes to show the new status.
+
+### Supported shipment statuses
+
+| Status | Meaning in this demo |
+|---|---|
+| `Shipped` | The batch has left the farm or the previous stage |
+| `In Transit` | The batch is on its way |
+| `Delivered to Retailer` | The batch has been handed to the retailer |
+
+These three values come from the sprint plan (US-05: "Shipped / In Transit / Delivered to Retailer") and the SRS business rules ("Shipped or In Transit"). The same values are used in the form, the API, the database, the event data and the ledger.
+
+Choosing *Delivered to Retailer* does not mark the batch as received. Retailer receipt confirmation (`Received by Retailer`) is US-06.
+
+Every batch starts as `Registered`. The status changes to the latest shipment status, and each change is kept as its own event.
+
+### Optional note
+
+- Optional. Leave it empty to record no note.
+- Trimmed. A note that is only spaces is stored as no note.
+- At most 300 characters, and one line of plain text. Line breaks and other control characters are refused with a clear message.
+
+### Event and ledger integration
+
+Each successful update creates:
+
+- One `supply_chain_events` row: `event_type` `SHIPMENT_UPDATED`, `actor_role` `distributor`, the new `status`, the `note` and `event_timestamp`.
+- One ledger block whose event data contains `event_type`, `event_id`, `batch_id`, `actor_role`, `status`, `note` and `event_timestamp`. The block is linked to the previous block with the same hashing used for registrations (see Local ledger).
+
+### Transactions, rollback and repeated requests
+
+The batch status update, the event and the ledger block are written in one SQLite transaction (`BEGIN IMMEDIATE`). If any step fails, all three are rolled back, so no status change, event or block is left behind. A test forces a ledger failure and checks that nothing was saved.
+
+Like registration, each update requires an `Idempotency-Key` header. Repeating the same request returns the existing update (`200`) and writes nothing. Reusing the key for a different batch, status or note returns `409`.
+
+### Role restrictions
+
+- Only an active **Distributor** session can list batches for shipment or record an update. Farmer and Retailer sessions get `403`, and a request with no session gets `401`.
+- The distributor is taken from the signed session, never from the request body.
+- The Farmer's batch endpoints (`/api/batches`, QR codes) are unchanged. The distributor's batch list does not include the farmer's identity.
+- Only the Distributor workspace shows the shipment form.
+
+### API
+
+| Method | Path | Access | Description |
+|---|---|---|---|
+| GET | `/api/shipments/batches` | Distributor | Registered batches for shipment updates (no farmer identity) |
+| POST | `/api/shipments` | Distributor, `Idempotency-Key` required | Body `{"batch_id", "status", "note"?}`. `201` created, `200` repeated request, `400` invalid input (with `error.details`), `404` unknown batch, `409` key reused for different details |
+
+Successful responses contain `batch` (`batch_id`, `current_status`), `event` (`event_id`, `event_type`, `actor_role`, `batch_id`, `status`, `note`, `timestamp`) and `ledger_block` (`index`, `block_hash`, `previous_hash`).
+
+### Database changes
+
+- `supply_chain_events` gained `client_request_id` (the idempotency key), added with `ALTER TABLE` and a UNIQUE index. Existing events keep `NULL`.
+- No other table changed. `product_batches.current_status` already existed and is now updated by shipments.
+- The migration was run on a copy of the local database: the events, batches, users and ledger were all kept and the foreign-key check was clean.
 
 ## Testing
 
@@ -413,6 +480,8 @@ npm run build
 | POST | `/api/batches` | Farmer registers a product batch (requires `Idempotency-Key`); response includes `batch_id`, `tracking_url`, `qr_code_url` |
 | GET | `/api/batches/by-batch-id/<batch ID>` | Farmer looks up one of their batches by its batch ID |
 | GET | `/api/batches/<id>/qr.png` | Farmer's QR code image (`?download=1` to download) |
+| GET | `/api/shipments/batches` | Distributor's list of registered batches for shipment updates |
+| POST | `/api/shipments` | Distributor records a shipment update (requires `Idempotency-Key`) |
 | GET | `/api/ledger` | All ledger blocks in order (any active role) |
 | GET | `/api/ledger/latest` | Latest ledger block (any active role) |
 | GET | `/api/ledger/blocks/<index>` | One ledger block by index (any active role) |
@@ -440,6 +509,6 @@ Never commit real `.env` files, virtual environments, `node_modules`, SQLite dat
 ## Known limitations
 
 - Demo role access has no authentication; see [Security limitations](#security-limitations) under Demo role access.
-- No business features yet: no user management, shipment or receipt logic, tracking page or ledger verification.
+- No business features yet: no user management, retailer receipt confirmation, tracking page or ledger verification.
 - The ledger is a local, single-application hash chain. See Local ledger for what it does and does not prove.
 - SQLite is single-writer; this is acceptable for the local prototype but not for multi-user production load.

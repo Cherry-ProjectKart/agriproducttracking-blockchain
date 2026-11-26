@@ -32,6 +32,6 @@ DEMO_ACCOUNTS: Final[dict[str, tuple[str, str]]] = {
 # until their stories are built. Register batch is available from BPT-003 (US-02).
 ROLE_ACTIONS: Final[dict[str, tuple[tuple[str, str, bool], ...]]] = {
     "farmer": (("register_batch", "Register product batch", True),),
-    "distributor": (("record_shipment", "Record shipment update", False),),
+    "distributor": (("record_shipment", "Record shipment update", True),),
     "retailer": (("confirm_receipt", "Confirm receipt of batch", False),),
 }

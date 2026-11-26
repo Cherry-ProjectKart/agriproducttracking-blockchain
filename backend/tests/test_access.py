@@ -164,7 +164,7 @@ def test_role_actions_requires_active_session(client):
     ("role", "expected_action_key", "expected_available"),
     [
         ("farmer", "register_batch", True),  # available from BPT-003 (US-02)
-        ("distributor", "record_shipment", False),
+        ("distributor", "record_shipment", True),  # available from BPT-006 (US-05)
         ("retailer", "confirm_receipt", False),
     ],
 )

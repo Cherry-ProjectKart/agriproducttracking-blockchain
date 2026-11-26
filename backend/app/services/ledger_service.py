@@ -89,6 +89,25 @@ def registration_event_data(
     }
 
 
+def shipment_event_data(
+    *, event_id: int, batch_id: str, status: str, note: str | None, event_timestamp: str
+) -> dict[str, Any]:
+    """The event data recorded for a distributor shipment update (US-05).
+
+    The event timestamp is the same string stored in supply_chain_events.event_timestamp.
+    Contains no user names, session values or keys.
+    """
+    return {
+        "event_type": "SHIPMENT_UPDATED",
+        "event_id": event_id,
+        "batch_id": batch_id,
+        "actor_role": "distributor",
+        "status": status,
+        "note": note,
+        "event_timestamp": event_timestamp,
+    }
+
+
 def _block_from_row(row: sqlite3.Row | tuple) -> dict[str, Any]:
     index, timestamp, event_payload, previous_hash, block_hash, event_id = tuple(row)
     event_data = json.loads(event_payload)

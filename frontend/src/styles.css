@@ -573,6 +573,46 @@ body {
   overflow-wrap: anywhere;
 }
 
+.shipment-panel {
+  margin-bottom: 1.5rem;
+}
+
+.shipment-select {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.shipment-select input[type='radio'] {
+  width: 1.1rem;
+  height: 1.1rem;
+  cursor: pointer;
+}
+
+.shipment-selected {
+  margin: 0 0 1rem;
+  color: var(--color-muted);
+}
+
+.form-field select {
+  font: inherit;
+  color: var(--color-text);
+  background: #ffffff;
+  border: 1px solid #8a9a91;
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+  width: 100%;
+}
+
+.form-field select[aria-invalid='true'] {
+  border: 2px solid var(--color-danger);
+}
+
+.form-field select:disabled {
+  background: #eef2ef;
+}
+
 :focus-visible {
   outline: 3px solid #f5b700;
   outline-offset: 2px;
