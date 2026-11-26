@@ -2,7 +2,9 @@
 
 from flask import Blueprint
 
+from app.routes.access import access_bp
 from app.routes.health import health_bp
 
 api_bp = Blueprint("api", __name__)
 api_bp.register_blueprint(health_bp)
+api_bp.register_blueprint(access_bp)

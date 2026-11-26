@@ -1,4 +1,4 @@
-export default function AppHeader({ title }) {
+export default function AppHeader({ title, children }) {
   return (
     <header className="app-header">
       <div className="app-header__inner">
@@ -6,6 +6,7 @@ export default function AppHeader({ title }) {
           ⛓
         </span>
         <span className="app-header__title">{title}</span>
+        {children ? <div className="app-header__actions">{children}</div> : null}
       </div>
     </header>
   );
