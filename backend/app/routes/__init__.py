@@ -9,6 +9,7 @@ from app.routes.history import history_bp
 from app.routes.ledger import ledger_bp
 from app.routes.receipts import receipts_bp
 from app.routes.shipments import shipments_bp
+from app.routes.tracking import tracking_bp
 
 api_bp = Blueprint("api", __name__)
 api_bp.register_blueprint(health_bp)
@@ -18,3 +19,4 @@ api_bp.register_blueprint(ledger_bp)
 api_bp.register_blueprint(shipments_bp)
 api_bp.register_blueprint(receipts_bp)
 api_bp.register_blueprint(history_bp)
+api_bp.register_blueprint(tracking_bp)

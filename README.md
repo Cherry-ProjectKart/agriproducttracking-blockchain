@@ -2,7 +2,7 @@
 
 A blockchain-enabled system for tracing agricultural products from farm to retail. Every supply-chain event is recorded in a tamper-evident ledger so that a product's journey can be verified by farmers, distributors, retailers and consumers.
 
-> **Status:** batch history and ledger integrity verification (BPT-008, US-07) on top of retailer receipt confirmation (BPT-007, US-06), distributor shipment updates (BPT-006, US-05), the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001). The consumer tracking page (US-08) is not implemented yet.
+> **Status:** consumer QR tracking (BPT-009, US-08) on top of batch history and ledger integrity verification (BPT-008, US-07), retailer receipt confirmation (BPT-007, US-06), distributor shipment updates (BPT-006, US-05), the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001).
 
 ## Technology stack
 
@@ -271,7 +271,7 @@ e.g.  http://localhost:5173/track/PB-7K2M-9QXD
 - `TRACKING_BASE_URL` defaults to `http://localhost:5173`, the address of the Vite dev server that serves the app. To scan with a phone on the same Wi-Fi, set it to this computer's LAN address, for example `http://192.168.1.20:5173`. Startup fails if it is not an absolute `http://` or `https://` URL.
 - The QR code contains no user, session, key or other private data.
 - The QR is PNG, error-correction level M, generated on demand with the `segno` library. Nothing is written to disk. The same batch always gives the same image.
-- **The tracking page at `/track/<batch ID>` is part of US-08.** Until then, the URL opens the app's start page. The QR code already points at the correct address.
+- **The tracking page at `/track/<batch ID>` is the public consumer page** (see Consumer QR tracking). It needs no login. The QR code points at the correct address.
 
 ### Downloading and viewing the QR code
 
@@ -301,7 +301,7 @@ Batch responses now include `batch_id`, `tracking_url` and `qr_code_url`. Existi
 
 ### Limitations
 
-- The tracking page (`/track/<batch ID>`) is not built yet. It belongs to US-08. The QR code and tracking URL are final.
+- The tracking page (`/track/<batch ID>`) is described in Consumer QR tracking. The QR code and tracking URL format are final.
 - Batch IDs are random, not sequential. Uniqueness depends on the database constraint and retry, not on the size of the ID space.
 - A phone can scan the QR only if it can reach `TRACKING_BASE_URL` on the local network.
 
@@ -583,6 +583,88 @@ Example result from `/api/ledger/verify`: `{"result": "valid", "checked_blocks":
 - Verification is run on request. Nothing runs automatically, and the result is not stored.
 - The history and verification views are available to every demonstration role. There is no reviewer role.
 
+## Consumer QR tracking (US-08)
+
+A consumer scans a batch's QR code and sees its details and journey. The tracking page is public and read-only: it needs no login and no role.
+
+### The tracking URL and the page
+
+The QR code encodes `{TRACKING_BASE_URL}/track/{batch ID}`, for example `http://localhost:5173/track/PB-7K2M-9QXD`. The address opens the **consumer tracking page** in the frontend. That page is separate from the workspace: it does not load the demo session, the role screen or the workspace, and it has no buttons, forms or links that change anything.
+
+The page shows:
+
+- the batch ID, product name, origin or farm location, and current status
+- the chronological journey: each registration, shipment and receipt event, with the recorded-by role, status, note (when there is one), timestamp and ledger block number
+- clear messages for an unknown batch, a malformed code, and a server that cannot be reached
+
+The page sets the browser title to `Batch <ID> · Product tracking`. It is designed for phone screens first and widens on larger screens.
+
+### Public tracking endpoint
+
+| Method | Path | Access | Description |
+|---|---|---|---|
+| GET | `/api/tracking/<batch ID>` | **Public**: no session, no login | Batch details and recorded history. `400` malformed ID, `404` unknown batch |
+
+Response:
+
+```json
+{
+  "batch": {"batch_id": "PB-7K2M-9QXD", "product_name": "Organic Tomatoes", "origin": "Hill Top Farm, Plot 2", "current_status": "Received by Retailer"},
+  "count": 4,
+  "events": [
+    {"event_type": "PRODUCT_REGISTERED", "label": "Registration", "actor_role": "farmer", "status": "Registered", "note": null, "timestamp": "2026-11-26T17:52:00.787Z", "ledger_block_index": 19}
+  ]
+}
+```
+
+The endpoint reuses the batch history service from BPT-008 and keeps only the fields above. It sets `Cache-Control: no-store`, sets no cookie, and accepts only `GET` (other methods return `405`).
+
+**Exposed:** the batch ID, product name, origin, current status, and for each event its type, label, actor role, status, note, timestamp and ledger block index.
+
+**Not exposed:** the farmer's or any user's identity or ID, session data, tokens, secrets, the internal row IDs of batches and events, request keys, the ledger hashes and payloads, or any other database record. This list is enforced by a test that checks the response keys and the text of the response.
+
+Every other endpoint keeps its role protection. The public endpoint does not change the session of anyone who is signed in, and it cannot create or change events.
+
+### How the QR code works
+
+- The QR image is generated by the backend for the farmer's batch (`GET /api/batches/<id>/qr.png`, farmer only, see Unique batch IDs and QR codes). Its content is only the tracking URL.
+- The tracking URL is built from `TRACKING_BASE_URL`. The default is `http://localhost:5173`, the address of the frontend. Nothing in the code contains a machine-specific address.
+- The QR image decodes to exactly the tracking URL in the batch response. The test suite decodes the real PNG to check this.
+
+### Demonstrating it on this computer
+
+1. Start the backend and the frontend (see Running the application).
+2. Sign in as **Farmer**, register a batch and select **View QR** on it.
+3. Open the batch's tracking link on the same computer: `http://localhost:5173/track/<batch ID>`. The tracking page opens without a login.
+4. Optional: sign in as **Distributor** to record a shipment and as **Retailer** to confirm receipt. Reload the tracking page to see the new events.
+
+### Scanning from another device on the same network
+
+The application runs on this computer only. A phone or other device can scan the QR code and open the page only if it can reach this computer's address on the local network. Nothing in the project contains a fixed address, so set it yourself:
+
+1. Find this computer's local network address (for example with `ipconfig` in PowerShell). Use the IPv4 address of your Wi-Fi or Ethernet adapter. Do not use a value from another project or machine.
+2. In `backend/.env`, set `TRACKING_BASE_URL=http://<that address>:5173`. Restart the backend. Batches registered after the change get QR codes with the new address. Existing QR codes keep the old address.
+3. Start the frontend so that it listens on the network: `npm run dev -- --host`. The Vite dev server then accepts connections from other devices on the network.
+4. Allow Node.js or port 5173 through the Windows firewall on the private network if prompted.
+5. Connect the phone to the same Wi-Fi network. Scan the QR code, or open `http://<that address>:5173/track/<batch ID>`.
+
+Notes:
+
+- The Flask backend still listens only on `127.0.0.1`, so it is not reachable from the network. The browser calls the backend through the Vite proxy on port 5173, so only that port needs to be reachable.
+- This is a localhost demonstration: plain HTTP, no HTTPS, no caching, no authentication for the tracking page.
+
+### Verified behaviour
+
+- Public access without a session: tests check it, and the browser opened the tracking page directly with no login.
+- The QR image decodes to the tracking URL, and that URL, used with no session, returns the same batch and journey as the database.
+- A complete flow (registration, shipment, delivery to the retailer and receipt) was shown on the tracking page with four events, each with its ledger block.
+
+### Limitations
+
+- The page shows what the local ledger recorded. The record shows that events were entered and not altered. It does not prove that the goods or the information are true.
+- The ledger is one local SQLite file, not a decentralised or public blockchain. The integrity check (BPT-008) detects edits that were not followed by recalculating the chain.
+- The tracking page is not translated and is designed for English demonstration use.
+
 ## Testing
 
 Backend (pytest, from `backend/`):
@@ -618,6 +700,7 @@ npm run build
 | POST | `/api/shipments` | Distributor records a shipment update (requires `Idempotency-Key`) |
 | GET | `/api/history/<batch ID>` | Batch history: registration, shipment and receipt events in order (any active role) |
 | GET | `/api/ledger/verify` | Independent ledger integrity check: Valid or Invalid with details (any active role) |
+| GET | `/api/tracking/<batch ID>` | **Public** consumer tracking: batch details and history. No session needed |
 | GET | `/api/receipts/awaiting` | Retailer's batches awaiting receipt |
 | POST | `/api/receipts` | Retailer confirms receipt of a batch (requires `Idempotency-Key`) |
 | GET | `/api/ledger` | All ledger blocks in order (any active role) |
@@ -647,6 +730,6 @@ Never commit real `.env` files, virtual environments, `node_modules`, SQLite dat
 ## Known limitations
 
 - Demo role access has no authentication; see [Security limitations](#security-limitations) under Demo role access.
-- No business features yet: no user management and no consumer tracking page.
+- No user management, consumer accounts or cloud deployment.
 - The ledger is a local, single-application hash chain. See Local ledger for what it does and does not prove.
 - SQLite is single-writer; this is acceptable for the local prototype but not for multi-user production load.
