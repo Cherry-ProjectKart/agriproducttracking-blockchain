@@ -161,14 +161,14 @@ def test_role_actions_requires_active_session(client):
 
 
 @pytest.mark.parametrize(
-    ("role", "expected_action_key"),
+    ("role", "expected_action_key", "expected_available"),
     [
-        ("farmer", "register_batch"),
-        ("distributor", "record_shipment"),
-        ("retailer", "confirm_receipt"),
+        ("farmer", "register_batch", True),  # available from BPT-003 (US-02)
+        ("distributor", "record_shipment", False),
+        ("retailer", "confirm_receipt", False),
     ],
 )
-def test_role_actions_returns_actions_for_active_role(client, role, expected_action_key):
+def test_role_actions_returns_actions_for_active_role(client, role, expected_action_key, expected_available):
     _select_role(client, role)
 
     response = client.get("/api/role-actions")
@@ -177,7 +177,7 @@ def test_role_actions_returns_actions_for_active_role(client, role, expected_act
     body = response.get_json()
     assert body["role"] == role
     assert [action["key"] for action in body["actions"]] == [expected_action_key]
-    assert all(action["available"] is False for action in body["actions"])
+    assert [action["available"] for action in body["actions"]] == [expected_available]
 
 
 def test_role_actions_is_unauthorised_after_exit(client):

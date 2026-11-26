@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
+import FarmerBatchPanel from '../components/batches/FarmerBatchPanel.jsx';
 import { fetchRoleActions } from '../services/accessService.js';
 
 const LOAD_ERROR = 'Could not load the actions for this role. Make sure the backend is running.';
 
 /**
  * Role-specific landing view. The action list comes from the backend, which checks the
- * active session role before returning anything.
+ * active session role before returning anything. Batch registration is shown only to the
+ * farmer role; Distributor and Retailer sessions never render the form.
  */
-export default function RoleWorkspacePage({ roleLabel, roleDescription }) {
+export default function RoleWorkspacePage({ role, roleLabel, roleDescription }) {
   const [state, setState] = useState({ status: 'loading', actions: [], error: null });
 
   useEffect(() => {
@@ -32,6 +34,8 @@ export default function RoleWorkspacePage({ roleLabel, roleDescription }) {
         {roleLabel} workspace
       </h1>
       {roleDescription ? <p className="dashboard__description">{roleDescription}</p> : null}
+
+      {role === 'farmer' ? <FarmerBatchPanel /> : null}
 
       <h2 className="dashboard__section-heading">Available actions</h2>
       {state.status === 'loading' ? <p role="status">Loading actions…</p> : null}

@@ -48,8 +48,8 @@ async function performRequest(path, init) {
  * Send a JSON request. Resolves with the parsed body for 2xx responses.
  * Rejects with ApiError for network failures and non-2xx responses (body attached when present).
  */
-export async function sendJson(method, path, { body, signal } = {}) {
-  const headers = { Accept: 'application/json' };
+export async function sendJson(method, path, { body, signal, headers: extraHeaders } = {}) {
+  const headers = { Accept: 'application/json', ...extraHeaders };
   const init = { method, headers, signal };
   if (body !== undefined) {
     headers['Content-Type'] = 'application/json';

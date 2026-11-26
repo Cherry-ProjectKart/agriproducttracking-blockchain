@@ -2,7 +2,7 @@
 
 A blockchain-enabled system for tracing agricultural products from farm to retail. Every supply-chain event is recorded in a tamper-evident ledger so that a product's journey can be verified by farmers, distributors, retailers and consumers.
 
-> **Status:** basic demo role access (BPT-002, US-01) on top of the project foundation (BPT-001). Business features such as batch registration, QR codes and the ledger are not implemented yet.
+> **Status:** farmer product batch registration (BPT-003, US-02) on top of demo role access (BPT-002, US-01) and the project foundation (BPT-001). QR codes, batch IDs, shipment updates, receipt confirmation and the ledger are not implemented yet.
 
 ## Technology stack
 
@@ -161,6 +161,84 @@ Endpoints that require a role use the `require_role(...)` decorator in `backend/
 - **No CSRF token.** `SameSite=Lax` limits cross-site requests, but a same-site page could still switch roles. The impact is limited to this demo.
 - **Sessions are browser-session cookies** with no idle timeout.
 
+## Product batch registration (US-02)
+
+A farmer registers an agricultural product batch from the Farmer workspace.
+
+### Workflow
+
+1. Choose **Farmer** on the role screen. The Farmer workspace shows the **Register a product batch** form and the list of your batches.
+2. Enter the batch details. Fields marked * are required. Errors appear beside each field.
+3. Select **Register batch**. The button shows *Registering…* until the server answers.
+4. On success, a confirmation shows the batch details, the form clears, and the batch appears in **Your registered batches**.
+
+### Fields
+
+| Field | Required | Rules |
+|---|---|---|
+| Product name | yes | 1–120 characters |
+| Origin or farm location | yes | 1–200 characters |
+| Quantity | yes | Positive decimal number, for example `25` or `12.5`. Exponents, signs and zero are rejected |
+| Unit | yes | 1–20 characters, free text (for example `kg` or `crates`) |
+| Harvest or registration date | yes | Real calendar date in `YYYY-MM-DD` format |
+| Description | no | Up to 500 characters |
+
+The SRS requires product name, quantity, unit and origin (section 7.3). The harvest or registration date is also required here because the US-02 field list includes it and the database column is non-null. The length limits are demo defaults; the SRS does not set them.
+
+Validation runs in the browser and again on the server. The server's rules are the ones that count.
+
+### Role restrictions
+
+- Only an active **Farmer** session can register or list batches. Distributor and Retailer sessions get `403`, and the form is not rendered for them.
+- The farmer is taken from the signed session, never from the request body. Fields such as `created_by` or `current_status` sent in the body are ignored.
+- A farmer sees only the batches they registered.
+
+### Duplicate protection
+
+Every registration request must include an `Idempotency-Key` header (8–64 letters, digits or hyphens). The web app generates a UUID for each entry. If the same submission is sent again, for example after a network error, the server returns the batch that was already saved (`200`) instead of creating a second one. Reusing the key for different details returns `409`.
+
+### Registration API
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/api/batches` | Farmer session + `Idempotency-Key` | Register a batch. `201` when created, `200` for a repeated submission, `400` for invalid input, `409` for a key reused with different details |
+| GET | `/api/batches` | Farmer session | The farmer's batches, newest first |
+| GET | `/api/batches/<id>` | Farmer session | One of the farmer's batches. `404` when it does not exist or belongs to another farmer |
+
+Request body for `POST /api/batches`:
+
+```json
+{
+  "product_name": "Basmati Rice",
+  "description": "Long-grain rice harvested in October.",
+  "quantity": 250,
+  "unit": "kg",
+  "origin": "Green Valley Farm, Plot 4",
+  "harvest_date": "2026-10-15"
+}
+```
+
+Response (`201`): `{"batch": {"id", "product_name", "description", "quantity", "unit", "origin", "harvest_date", "current_status", "created_at"}}`. `current_status` is `Registered`.
+
+Validation errors return `400` with per-field messages in `error.details`, for example `{"error": {"code": 400, "message": "Please correct the highlighted fields.", "details": {"quantity": "Quantity must be greater than zero."}}}`.
+
+### Database changes
+
+The `product_batches` table was changed in two ways. Existing databases are upgraded automatically by `python scripts/init_db.py`, and existing users, sessions and other rows are kept.
+
+- `batch_code` is now **nullable**. The unique batch identifier belongs to US-03, so batches registered now have no `batch_code` yet.
+- `client_request_id` (unique, nullable) was added to store the `Idempotency-Key`.
+
+A registration also writes one `supply_chain_events` row: `event_type` `PRODUCT_REGISTERED`, `actor_role` `farmer`, `status` `Registered`. No ledger block is created; that is US-04.
+
+SQLite cannot drop a `NOT NULL` constraint in place, so the upgrade rebuilds `product_batches` (see `backend/app/migrations.py`). It runs with foreign keys off, copies every row with its original id, checks foreign keys, and only then drops the old table. The upgrade can be run again safely.
+
+### Limitations
+
+- No unique batch ID or QR code yet (US-03). Batches are shown by product name and details, not by identifier.
+- The farmer's list is the only batch view. Distributor and Retailer lists belong to later stories.
+- The role check follows the BPT-002 demo model. It is not authentication (see Demo role access).
+
 ## Testing
 
 Backend (pytest, from `backend/`):
@@ -189,6 +267,9 @@ npm run build
 | GET | `/api/roles` | Supported demo roles |
 | GET / POST / DELETE | `/api/session` | Read, start or exit the demo role session |
 | GET | `/api/role-actions` | Role-specific actions for the active session role |
+| POST | `/api/batches` | Farmer registers a product batch (requires `Idempotency-Key`) |
+| GET | `/api/batches` | Farmer's own batches |
+| GET | `/api/batches/<id>` | One of the farmer's batches |
 
 Errors under `/api/*` are returned as JSON: `{"error": {"code", "name", "message"}}`.
 

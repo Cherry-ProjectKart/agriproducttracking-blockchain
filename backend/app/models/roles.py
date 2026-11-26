@@ -16,7 +16,7 @@ ROLE_LABELS: Final[dict[str, str]] = {
 }
 
 ROLE_DESCRIPTIONS: Final[dict[str, str]] = {
-    "farmer": "Register agricultural product batches and view their identifiers and QR codes.",
+    "farmer": "Register agricultural product batches and review the batches you have registered.",
     "distributor": "View registered batches and record shipment or movement updates.",
     "retailer": "View incoming batches and confirm receipt of products.",
 }
@@ -28,9 +28,10 @@ DEMO_ACCOUNTS: Final[dict[str, tuple[str, str]]] = {
     "retailer": ("demo.retailer", "Demo Retailer"),
 }
 
-# role -> (action key, action label). Actions are placeholders until their stories are built.
-ROLE_ACTIONS: Final[dict[str, tuple[tuple[str, str], ...]]] = {
-    "farmer": (("register_batch", "Register product batch"),),
-    "distributor": (("record_shipment", "Record shipment update"),),
-    "retailer": (("confirm_receipt", "Confirm receipt of batch"),),
+# role -> (action key, action label, available). Actions marked unavailable are placeholders
+# until their stories are built. Register batch is available from BPT-003 (US-02).
+ROLE_ACTIONS: Final[dict[str, tuple[tuple[str, str, bool], ...]]] = {
+    "farmer": (("register_batch", "Register product batch", True),),
+    "distributor": (("record_shipment", "Record shipment update", False),),
+    "retailer": (("confirm_receipt", "Confirm receipt of batch", False),),
 }
