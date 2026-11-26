@@ -3,6 +3,7 @@ import sqlite3
 import pytest
 
 from app.db import init_db
+from app.services.batch_identifiers import BATCH_ID_PATTERN
 from app.services.access_service import seed_demo_users
 from app.services.batch_service import register_batch, validate_batch_input
 
@@ -99,7 +100,8 @@ def test_registered_batch_is_persisted_with_registration_event(client, db_path):
     assert row["current_status"] == "Registered"
     assert row["created_by"] == _farmer_user_id(db_path)
     assert row["client_request_id"] == KEY
-    assert row["batch_code"] is None  # assigned by US-03, not this story
+    # The unique batch ID is assigned at registration (US-03), in the same transaction.
+    assert BATCH_ID_PATTERN.match(row["batch_code"])
     assert row["created_at"]
 
     events = _rows(db_path, "SELECT * FROM supply_chain_events WHERE batch_id = ?", (batch_id,))

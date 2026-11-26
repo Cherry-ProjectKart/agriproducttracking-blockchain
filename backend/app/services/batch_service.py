@@ -1,8 +1,11 @@
-"""Product batch validation, registration and retrieval (US-02).
+"""Product batch validation, registration and retrieval (US-02, US-03).
 
 Writes are idempotent: each registration carries a client-supplied submission key, which is
 stored in product_batches.client_request_id. Repeating the same request returns the original
 batch instead of creating another one.
+
+Each new batch also receives a unique batch ID (product_batches.batch_code, US-03). The ID is
+generated here and stored in the same transaction as the batch and its registration event.
 """
 
 import math
@@ -20,13 +23,20 @@ from app.models.batch import (
     REGISTRATION_EVENT_TYPE,
     UNIT_MAX_LENGTH,
 )
+from app.services.batch_identifiers import (
+    MAX_ID_ATTEMPTS,
+    BatchIdAllocationError,
+    generate_batch_id,
+    is_unique_violation,
+)
 
 _DATE_PATTERN = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 # Plain decimal numbers only: "12", "12.5". Rejects signs, exponents and empty values.
 _NUMBER_PATTERN = re.compile(r"^[0-9]+(\.[0-9]+)?$")
 
 _BATCH_COLUMNS = (
-    "id, product_name, description, quantity, unit, origin, harvest_date, current_status, created_at"
+    "id, batch_code, product_name, description, quantity, unit, origin, harvest_date, "
+    "current_status, created_at"
 )
 
 
@@ -107,8 +117,8 @@ def _harvest_date(value: object, details: dict[str, str]) -> str | None:
 def validate_batch_input(payload: dict[str, Any]) -> dict[str, Any]:
     """Validate and normalise a registration payload.
 
-    Only the six product fields are read. Any other key, including created_by or
-    current_status, is ignored, so clients cannot set ownership or status.
+    Only the six product fields are read. Any other key, including created_by, current_status
+    or batch_id, is ignored, so clients cannot set ownership, status or identifiers.
     """
     details: dict[str, str] = {}
     clean: dict[str, Any] = {
@@ -131,6 +141,7 @@ def validate_batch_input(payload: dict[str, Any]) -> dict[str, Any]:
 def _to_response(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "id": row["id"],
+        "batch_id": row["batch_code"],
         "product_name": row["product_name"],
         "description": row["description"],
         "quantity": row["quantity"],
@@ -170,10 +181,11 @@ def farmer_exists(conn: sqlite3.Connection, user_id: int) -> bool:
 def register_batch(
     conn: sqlite3.Connection, farmer_id: int, submission_key: str, clean: dict[str, Any]
 ) -> tuple[dict[str, Any], bool]:
-    """Persist a validated batch and its registration event.
+    """Persist a validated batch with its unique batch ID and registration event.
 
     Returns (batch, created). created is False when the submission key was already used by
     the same farmer for the same details; the existing batch is returned without a new write.
+    BatchIdAllocationError is raised only if MAX_ID_ATTEMPTS new IDs all collide.
     """
     existing = _find_by_submission_key(conn, submission_key)
     if existing is not None:
@@ -181,47 +193,55 @@ def register_batch(
             raise BatchConflictError("This submission key was already used for a different batch.")
         return _to_response(existing), False
 
-    try:
-        cursor = conn.execute(
-            """
-            INSERT INTO product_batches
-                (client_request_id, product_name, description, quantity, unit, origin,
-                 harvest_date, current_status, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                submission_key,
-                clean["product_name"],
-                clean["description"],
-                clean["quantity"],
-                clean["unit"],
-                clean["origin"],
-                clean["harvest_date"],
-                REGISTERED_STATUS,
-                farmer_id,
-            ),
-        )
-        batch_id = cursor.lastrowid
-        conn.execute(
-            """
-            INSERT INTO supply_chain_events (batch_id, event_type, actor_role, status, note)
-            VALUES (?, ?, 'farmer', ?, ?)
-            """,
-            (batch_id, REGISTRATION_EVENT_TYPE, REGISTERED_STATUS, REGISTRATION_EVENT_NOTE),
-        )
-        conn.commit()
-    except sqlite3.IntegrityError:
-        conn.rollback()
-        # A concurrent request with the same key may have won the race; return its result if it matches.
-        raced = _find_by_submission_key(conn, submission_key)
-        if raced is None:
+    for _ in range(MAX_ID_ATTEMPTS):
+        batch_code = generate_batch_id()
+        try:
+            cursor = conn.execute(
+                """
+                INSERT INTO product_batches
+                    (batch_code, client_request_id, product_name, description, quantity, unit,
+                     origin, harvest_date, current_status, created_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    batch_code,
+                    submission_key,
+                    clean["product_name"],
+                    clean["description"],
+                    clean["quantity"],
+                    clean["unit"],
+                    clean["origin"],
+                    clean["harvest_date"],
+                    REGISTERED_STATUS,
+                    farmer_id,
+                ),
+            )
+            batch_row_id = cursor.lastrowid
+            conn.execute(
+                """
+                INSERT INTO supply_chain_events (batch_id, event_type, actor_role, status, note)
+                VALUES (?, ?, 'farmer', ?, ?)
+                """,
+                (batch_row_id, REGISTRATION_EVENT_TYPE, REGISTERED_STATUS, REGISTRATION_EVENT_NOTE),
+            )
+            conn.commit()
+            break
+        except sqlite3.IntegrityError as error:
+            conn.rollback()
+            # A concurrent request with the same key may have won the race; return its result if it matches.
+            raced = _find_by_submission_key(conn, submission_key)
+            if raced is not None:
+                if not _matches_submission(raced, farmer_id, clean):
+                    raise BatchConflictError("This submission key was already used for a different batch.")
+                return _to_response(raced), False
+            if is_unique_violation(error):
+                continue  # the random ID was already taken: try another one
             raise
-        if not _matches_submission(raced, farmer_id, clean):
-            raise BatchConflictError("This submission key was already used for a different batch.")
-        return _to_response(raced), False
+    else:
+        raise BatchIdAllocationError("Could not allocate a unique batch ID. Please try again.")
 
     row = conn.execute(
-        f"SELECT {_BATCH_COLUMNS} FROM product_batches WHERE id = ?", (batch_id,)
+        f"SELECT {_BATCH_COLUMNS} FROM product_batches WHERE id = ?", (batch_row_id,)
     ).fetchone()
     return _to_response(row), True
 
@@ -236,9 +256,18 @@ def list_batches(conn: sqlite3.Connection, farmer_id: int) -> list[dict[str, Any
 
 
 def get_batch(conn: sqlite3.Connection, farmer_id: int, batch_id: int) -> dict[str, Any] | None:
-    """One batch owned by this farmer. Batches owned by others are reported as not found."""
+    """One batch owned by this farmer, by internal row id. Other farmers' batches are not found."""
     row = conn.execute(
         f"SELECT {_BATCH_COLUMNS} FROM product_batches WHERE id = ? AND created_by = ?",
         (batch_id, farmer_id),
+    ).fetchone()
+    return _to_response(row) if row is not None else None
+
+
+def get_batch_by_batch_id(conn: sqlite3.Connection, farmer_id: int, batch_code: str) -> dict[str, Any] | None:
+    """One batch owned by this farmer, by its public batch ID (PB-XXXX-XXXX)."""
+    row = conn.execute(
+        f"SELECT {_BATCH_COLUMNS} FROM product_batches WHERE batch_code = ? AND created_by = ?",
+        (batch_code, farmer_id),
     ).fetchone()
     return _to_response(row) if row is not None else None

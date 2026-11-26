@@ -2,6 +2,8 @@
 
 import sqlite3
 
+import pytest
+
 from app.db import init_db
 from app.migrations import LEGACY_PRODUCT_BATCHES, retire_outdated_product_batches
 
@@ -167,28 +169,23 @@ def test_interrupted_upgrade_is_completed_on_next_run(db_path):
     conn.close()
 
 
-def test_upgraded_table_accepts_batches_without_batch_code(db_path):
+def test_upgraded_table_rejects_batches_without_batch_id(db_path):
+    # BPT-003 made batch_code nullable so the rebuild could run. US-03 requires every batch to
+    # have an ID, so after the upgrade a batch without one is refused by a trigger.
     _make_bpt002_database(db_path)
     init_db(db_path)
 
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute(
-        """
-        INSERT INTO product_batches
-            (client_request_id, product_name, quantity, unit, origin, harvest_date, current_status, created_by)
-        VALUES ('upgrade-check-key', 'Maize', 3, 'bags', 'East Plot', '2026-11-01', 'Registered', 40)
-        """
-    )
-    conn.commit()
+    with pytest.raises(sqlite3.IntegrityError, match="batch ID"):
+        conn.execute(
+            """
+            INSERT INTO product_batches
+                (client_request_id, product_name, quantity, unit, origin, harvest_date, current_status, created_by)
+            VALUES ('upgrade-check-key', 'Maize', 3, 'bags', 'East Plot', '2026-11-01', 'Registered', 40)
+            """
+        )
     conn.close()
-
-    conn = sqlite3.connect(db_path)
-    batch_code = conn.execute(
-        "SELECT batch_code FROM product_batches WHERE client_request_id = 'upgrade-check-key'"
-    ).fetchone()[0]
-    conn.close()
-    assert batch_code is None
 
 
 def test_fresh_database_has_the_new_product_batches_definition(db_path):

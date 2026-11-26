@@ -16,6 +16,8 @@ and their rows are never touched.
 
 import sqlite3
 
+from app.services.batch_identifiers import assign_batch_id
+
 LEGACY_PRODUCT_BATCHES = "product_batches_legacy"
 PRODUCT_BATCHES_INDEXES = ("idx_product_batches_created_by", "idx_product_batches_status")
 _COPIED_COLUMNS = (
@@ -91,3 +93,21 @@ def complete_product_batches_upgrade(conn: sqlite3.Connection) -> None:
 
     conn.execute(f"DROP TABLE {LEGACY_PRODUCT_BATCHES}")
     conn.commit()
+
+
+def backfill_batch_ids(conn: sqlite3.Connection) -> list[str]:
+    """Step 3: give every batch that has no batch ID a unique one (US-03).
+
+    Batches that already have an ID are not changed. Events and other rows are not touched.
+    All assignments commit together, or none do. Returns the IDs that were assigned.
+    """
+    pending = [row[0] for row in conn.execute("SELECT id FROM product_batches WHERE batch_code IS NULL ORDER BY id")]
+    if not pending:
+        return []
+    try:
+        assigned = [assign_batch_id(conn, batch_row_id) for batch_row_id in pending]
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return assigned

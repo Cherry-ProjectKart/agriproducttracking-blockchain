@@ -30,6 +30,14 @@ def _env_list(name: str, default: str) -> list[str]:
     return [item.strip() for item in os.getenv(name, default).split(",") if item.strip()]
 
 
+def _tracking_base_url(raw: str) -> str:
+    """Base URL that QR codes point at. Must be an absolute http(s) URL; trailing slashes are removed."""
+    value = raw.strip().rstrip("/")
+    if not (value.startswith("http://") or value.startswith("https://")) or len(value) <= len("https://"):
+        raise ValueError("TRACKING_BASE_URL must be an absolute http:// or https:// URL, for example http://localhost:5173")
+    return value
+
+
 def _resolve_database_path(raw: str) -> str:
     path = Path(raw)
     if not path.is_absolute():
@@ -51,4 +59,6 @@ def build_config() -> dict[str, object]:
         "SESSION_COOKIE_SAMESITE": "Lax",
         # Localhost runs over plain HTTP, so Secure cookies would not be sent. Enable behind HTTPS.
         "SESSION_COOKIE_SECURE": _env_bool("SESSION_COOKIE_SECURE", False),
+        # Host used in QR codes. Use the host machine's LAN address when scanning from another device.
+        "TRACKING_BASE_URL": _tracking_base_url(os.getenv("TRACKING_BASE_URL", "http://localhost:5173")),
     }

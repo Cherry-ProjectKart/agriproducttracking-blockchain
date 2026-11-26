@@ -2,7 +2,7 @@
 
 A blockchain-enabled system for tracing agricultural products from farm to retail. Every supply-chain event is recorded in a tamper-evident ledger so that a product's journey can be verified by farmers, distributors, retailers and consumers.
 
-> **Status:** farmer product batch registration (BPT-003, US-02) on top of demo role access (BPT-002, US-01) and the project foundation (BPT-001). QR codes, batch IDs, shipment updates, receipt confirmation and the ledger are not implemented yet.
+> **Status:** unique batch IDs and QR codes (BPT-004, US-03) on top of farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001). The consumer tracking page, shipment updates, receipt confirmation and the ledger are not implemented yet.
 
 ## Technology stack
 
@@ -226,7 +226,7 @@ Validation errors return `400` with per-field messages in `error.details`, for e
 
 The `product_batches` table was changed in two ways. Existing databases are upgraded automatically by `python scripts/init_db.py`, and existing users, sessions and other rows are kept.
 
-- `batch_code` is now **nullable**. The unique batch identifier belongs to US-03, so batches registered now have no `batch_code` yet.
+- `batch_code` is now **nullable** in the table definition, so the rebuild could run. It holds the unique batch ID from US-03, and triggers (BPT-004) reject any batch without one.
 - `client_request_id` (unique, nullable) was added to store the `Idempotency-Key`.
 
 A registration also writes one `supply_chain_events` row: `event_type` `PRODUCT_REGISTERED`, `actor_role` `farmer`, `status` `Registered`. No ledger block is created; that is US-04.
@@ -235,9 +235,75 @@ SQLite cannot drop a `NOT NULL` constraint in place, so the upgrade rebuilds `pr
 
 ### Limitations
 
-- No unique batch ID or QR code yet (US-03). Batches are shown by product name and details, not by identifier.
 - The farmer's list is the only batch view. Distributor and Retailer lists belong to later stories.
 - The role check follows the BPT-002 demo model. It is not authentication (see Demo role access).
+
+## Batch IDs and QR codes (US-03)
+
+Each registered batch gets a unique, human-readable **batch ID** and a **QR code** that opens its tracking page.
+
+### Batch ID format
+
+`PB-XXXX-XXXX`, for example `PB-7K2M-9QXD`.
+
+- `PB` is a fixed prefix.
+- Each `X` is one of 32 Crockford base32 characters: `0–9` and `A–Z` without `I`, `L`, `O` and `U`. The ambiguous characters are left out so IDs are easy to read aloud and type.
+- The eight random characters are generated with Python's `secrets` module, so IDs cannot be guessed from registration order.
+
+### How uniqueness is enforced
+
+1. **Generation:** the ID is created during registration and stored in the same transaction as the batch and its `PRODUCT_REGISTERED` event. It is never entered by the farmer.
+2. **Database:** `product_batches.batch_code` is `UNIQUE`. A duplicate is rejected by SQLite.
+3. **Application:** if a random ID collides with an existing one, a new ID is generated and the insert is retried, up to 10 attempts. If every attempt collides, the request fails with `503`.
+4. **Every batch must have an ID:** triggers reject any batch inserted without one, and reject clearing an existing one.
+
+Repeating a registration with the same `Idempotency-Key` returns the same batch and the same ID.
+
+### QR code and tracking URL
+
+The QR code encodes only the batch's tracking URL:
+
+```text
+{TRACKING_BASE_URL}/track/{batch ID}
+e.g.  http://localhost:5173/track/PB-7K2M-9QXD
+```
+
+- `TRACKING_BASE_URL` defaults to `http://localhost:5173`, the address of the Vite dev server that serves the app. To scan with a phone on the same Wi-Fi, set it to this computer's LAN address, for example `http://192.168.1.20:5173`. Startup fails if it is not an absolute `http://` or `https://` URL.
+- The QR code contains no user, session, key or other private data.
+- The QR is PNG, error-correction level M, generated on demand with the `segno` library. Nothing is written to disk. The same batch always gives the same image.
+- **The tracking page at `/track/<batch ID>` is part of US-08.** Until then, the URL opens the app's start page. The QR code already points at the correct address.
+
+### Downloading and viewing the QR code
+
+- In the Farmer workspace, select **View QR** on a batch in the list, or see the confirmation after a registration. The QR image and its tracking URL are shown.
+- **Download QR code (PNG)** saves the image as `<batch ID>-qr.png`.
+- If the image cannot be loaded, the page shows an error with a **Try again** button.
+
+### Migration and backfill
+
+Running `python scripts/init_db.py` upgrades an existing database in place:
+
+- Batches that already have an ID are not changed.
+- Each batch without an ID receives a new unique ID. All assignments commit together or not at all. Running the script again changes nothing.
+- Users, events and every other row are kept, and foreign keys are checked.
+- The NOT NULL rule is added as triggers on `product_batches`, so no table rebuild is needed.
+
+### Batch and QR endpoints
+
+Farmer session required for every endpoint below. Other roles get `403`, and no session gets `401`.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/batches/by-batch-id/<batch ID>` | The farmer's batch with that ID. `400` for a malformed ID, `404` if not found or owned by another farmer |
+| GET | `/api/batches/<id>/qr.png` | The QR PNG for the farmer's batch. `?download=1` sends it as an attachment named `<batch ID>-qr.png`. `404` for a missing or foreign batch |
+
+Batch responses now include `batch_id`, `tracking_url` and `qr_code_url`. Existing fields and endpoints are unchanged.
+
+### Limitations
+
+- The tracking page (`/track/<batch ID>`) is not built yet. It belongs to US-08. The QR code and tracking URL are final.
+- Batch IDs are random, not sequential. Uniqueness depends on the database constraint and retry, not on the size of the ID space.
+- A phone can scan the QR only if it can reach `TRACKING_BASE_URL` on the local network.
 
 ## Testing
 
@@ -267,7 +333,9 @@ npm run build
 | GET | `/api/roles` | Supported demo roles |
 | GET / POST / DELETE | `/api/session` | Read, start or exit the demo role session |
 | GET | `/api/role-actions` | Role-specific actions for the active session role |
-| POST | `/api/batches` | Farmer registers a product batch (requires `Idempotency-Key`) |
+| POST | `/api/batches` | Farmer registers a product batch (requires `Idempotency-Key`); response includes `batch_id`, `tracking_url`, `qr_code_url` |
+| GET | `/api/batches/by-batch-id/<batch ID>` | Farmer looks up one of their batches by its batch ID |
+| GET | `/api/batches/<id>/qr.png` | Farmer's QR code image (`?download=1` to download) |
 | GET | `/api/batches` | Farmer's own batches |
 | GET | `/api/batches/<id>` | One of the farmer's batches |
 
@@ -282,6 +350,7 @@ Errors under `/api/*` are returned as JSON: `{"error": {"code", "name", "message
 | `CORS_ORIGINS` | backend | `http://localhost:5173,http://127.0.0.1:5173` | Origins allowed to call `/api/*` |
 | `SECRET_KEY` | backend | random per start | Signs the demo session cookie (see Security limitations) |
 | `SESSION_COOKIE_SECURE` | backend | `0` | Set `1` only when serving over HTTPS |
+| `TRACKING_BASE_URL` | backend | `http://localhost:5173` | Base of the tracking URL encoded in QR codes. Use the LAN address to scan from another device |
 | `FLASK_HOST` / `FLASK_PORT` | backend | `127.0.0.1` / `5000` | Development server address |
 | `FLASK_DEBUG` | backend | `0` | Enables the Flask debugger when `1` |
 | `VITE_API_PROXY_TARGET` | frontend | `http://127.0.0.1:5000` | Backend URL used by the Vite proxy |

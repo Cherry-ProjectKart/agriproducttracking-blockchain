@@ -36,6 +36,7 @@ const SIGNED_OUT = { active: false, role: null, role_label: null, display_name: 
 
 const SAVED_BATCH = {
   id: 1,
+  batch_id: 'PB-7K2M-9QXD',
   product_name: 'Basmati Rice',
   description: 'Long-grain rice.',
   quantity: 250,
@@ -44,6 +45,8 @@ const SAVED_BATCH = {
   harvest_date: '2026-10-15',
   current_status: 'Registered',
   created_at: '2026-11-26T10:00:00.000Z',
+  tracking_url: 'http://localhost:5173/track/PB-7K2M-9QXD',
+  qr_code_url: '/api/batches/1/qr.png',
 };
 
 function session(role, label, displayName) {
@@ -153,6 +156,88 @@ describe('Farmer batch registration in the app', () => {
     render(<App />);
 
     expect(await screen.findByText('No batches registered yet.')).toBeTruthy();
+  });
+});
+
+describe('Batch IDs and QR codes for the farmer', () => {
+  beforeEach(() => {
+    accessService.fetchRoles.mockResolvedValue(ROLES);
+    accessService.fetchSession.mockResolvedValue(session('farmer', 'Farmer', 'Demo Farmer'));
+    accessService.fetchRoleActions.mockResolvedValue(actionsFor('farmer'));
+    batchService.fetchBatches.mockResolvedValue([SAVED_BATCH]);
+    batchService.createBatch.mockResolvedValue(SAVED_BATCH);
+    fetchHealth.mockResolvedValue({
+      status: 'ok',
+      application: 'Blockchain Product Tracking',
+      database: { status: 'connected', schema_initialized: true },
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it('shows the batch ID in the list and in the registration confirmation', async () => {
+    render(<App />);
+    expect(await screen.findByText('PB-7K2M-9QXD', { selector: 'code' })).toBeTruthy();
+
+    fillValidForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Register batch' }));
+
+    expect(await screen.findByText('Batch registered.')).toBeTruthy();
+    const confirmation = screen.getByText('Batch registered.').closest('.alert');
+    expect(within(confirmation).getByText('PB-7K2M-9QXD')).toBeTruthy();
+  });
+
+  it('shows the QR code with a download link after registration', async () => {
+    render(<App />);
+    await screen.findByRole('button', { name: 'Register batch' });
+    fillValidForm();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Register batch' }));
+
+    const image = await screen.findByRole('img', { name: 'QR code for batch PB-7K2M-9QXD' });
+    expect(image.getAttribute('src')).toBe('/api/batches/1/qr.png');
+    const download = screen.getAllByRole('link', { name: 'Download QR code (PNG)' })[0];
+    expect(download.getAttribute('href')).toBe('/api/batches/1/qr.png?download=1');
+  });
+
+  it('opens a listed batch to show its details and QR code, and closes again', async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'View batch PB-7K2M-9QXD and its QR code' }));
+
+    expect(await screen.findByRole('heading', { name: 'Basmati Rice', level: 3 })).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'QR code for batch PB-7K2M-9QXD' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close details' }));
+    expect(screen.queryByRole('img', { name: 'QR code for batch PB-7K2M-9QXD' })).toBeNull();
+  });
+
+  it('shows a clear error in place of the QR code when it cannot be generated', async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'View batch PB-7K2M-9QXD and its QR code' }));
+
+    fireEvent.error(await screen.findByRole('img', { name: 'QR code for batch PB-7K2M-9QXD' }));
+
+    expect(await screen.findByText(/The QR code could not be generated/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+  });
+
+  it('does not show a batch ID or QR code to Distributor and Retailer sessions', async () => {
+    accessService.fetchSession.mockResolvedValue(SIGNED_OUT);
+    accessService.startSession.mockResolvedValue(session('retailer', 'Retailer', 'Demo Retailer'));
+    accessService.fetchRoleActions.mockResolvedValue(actionsFor('retailer'));
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Retailer/ }));
+    expect(await screen.findByRole('heading', { name: 'Retailer workspace' })).toBeTruthy();
+
+    expect(screen.queryByRole('img', { name: /QR code/ })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Download QR code (PNG)' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /View batch/ })).toBeNull();
+    expect(batchService.fetchBatches).not.toHaveBeenCalled();
   });
 });
 
