@@ -95,6 +95,22 @@ def complete_product_batches_upgrade(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def ensure_ledger_event_reference(conn: sqlite3.Connection) -> None:
+    """Add ledger_blocks.event_id and its UNIQUE index (BPT-005). Safe to run repeatedly.
+
+    A block may not reference the same supply-chain event twice. For databases created before
+    this story, the column is added with ALTER TABLE, because CREATE TABLE IF NOT EXISTS
+    does not change an existing table.
+    """
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(ledger_blocks)")}
+    if "event_id" not in columns:
+        conn.execute(
+            "ALTER TABLE ledger_blocks ADD COLUMN event_id INTEGER REFERENCES supply_chain_events (id) ON DELETE RESTRICT"
+        )
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_ledger_blocks_event_id ON ledger_blocks (event_id)")
+    conn.commit()
+
+
 def backfill_batch_ids(conn: sqlite3.Connection) -> list[str]:
     """Step 3: give every batch that has no batch ID a unique one (US-03).
 

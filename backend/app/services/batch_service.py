@@ -23,6 +23,7 @@ from app.models.batch import (
     REGISTRATION_EVENT_TYPE,
     UNIT_MAX_LENGTH,
 )
+from app.services.ledger_service import append_block, registration_event_data
 from app.services.batch_identifiers import (
     MAX_ID_ATTEMPTS,
     BatchIdAllocationError,
@@ -196,6 +197,11 @@ def register_batch(
     for _ in range(MAX_ID_ATTEMPTS):
         batch_code = generate_batch_id()
         try:
+            # One write transaction for the batch, its event and its ledger block. IMMEDIATE takes
+            # the write lock up front, so two registrations cannot both extend the same chain tip.
+            # If the caller already has a transaction open, it is used as is.
+            if not conn.in_transaction:
+                conn.execute("BEGIN IMMEDIATE")
             cursor = conn.execute(
                 """
                 INSERT INTO product_batches
@@ -217,12 +223,22 @@ def register_batch(
                 ),
             )
             batch_row_id = cursor.lastrowid
-            conn.execute(
+            event_cursor = conn.execute(
                 """
                 INSERT INTO supply_chain_events (batch_id, event_type, actor_role, status, note)
                 VALUES (?, ?, 'farmer', ?, ?)
                 """,
                 (batch_row_id, REGISTRATION_EVENT_TYPE, REGISTERED_STATUS, REGISTRATION_EVENT_NOTE),
+            )
+            event_id = event_cursor.lastrowid
+            append_block(
+                conn,
+                registration_event_data(
+                    event_id=event_id,
+                    batch_id=batch_code,
+                    product=clean,
+                ),
+                event_id,
             )
             conn.commit()
             break
@@ -236,6 +252,10 @@ def register_batch(
                 return _to_response(raced), False
             if is_unique_violation(error):
                 continue  # the random ID was already taken: try another one
+            raise
+        except Exception:
+            # Any other failure (for example in the ledger) must leave no partial batch or event.
+            conn.rollback()
             raise
     else:
         raise BatchIdAllocationError("Could not allocate a unique batch ID. Please try again.")

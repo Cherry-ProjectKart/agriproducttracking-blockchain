@@ -26,6 +26,10 @@ vi.mock('./services/healthService.js', () => ({
   fetchHealth: vi.fn(),
 }));
 
+vi.mock('./services/ledgerService.js', () => ({
+  fetchLedger: vi.fn().mockResolvedValue({ count: 0, latest: null, blocks: [] }),
+}));
+
 const ROLES = [
   { key: 'farmer', label: 'Farmer', description: 'Register agricultural product batches.' },
   { key: 'distributor', label: 'Distributor', description: 'View batches and record shipments.' },

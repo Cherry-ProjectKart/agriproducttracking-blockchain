@@ -2,7 +2,7 @@
 
 A blockchain-enabled system for tracing agricultural products from farm to retail. Every supply-chain event is recorded in a tamper-evident ledger so that a product's journey can be verified by farmers, distributors, retailers and consumers.
 
-> **Status:** unique batch IDs and QR codes (BPT-004, US-03) on top of farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001). The consumer tracking page, shipment updates, receipt confirmation and the ledger are not implemented yet.
+> **Status:** local hash-linked ledger (BPT-005, US-04) on top of unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001). Shipment updates, receipt confirmation, ledger verification and the consumer tracking page are not implemented yet.
 
 ## Technology stack
 
@@ -229,7 +229,7 @@ The `product_batches` table was changed in two ways. Existing databases are upgr
 - `batch_code` is now **nullable** in the table definition, so the rebuild could run. It holds the unique batch ID from US-03, and triggers (BPT-004) reject any batch without one.
 - `client_request_id` (unique, nullable) was added to store the `Idempotency-Key`.
 
-A registration also writes one `supply_chain_events` row: `event_type` `PRODUCT_REGISTERED`, `actor_role` `farmer`, `status` `Registered`. No ledger block is created; that is US-04.
+A registration also writes one `supply_chain_events` row: `event_type` `PRODUCT_REGISTERED`, `actor_role` `farmer`, `status` `Registered`. It also appends one ledger block (BPT-005, see Local ledger).
 
 SQLite cannot drop a `NOT NULL` constraint in place, so the upgrade rebuilds `product_batches` (see `backend/app/migrations.py`). It runs with foreign keys off, copies every row with its original id, checks foreign keys, and only then drops the old table. The upgrade can be run again safely.
 
@@ -305,6 +305,83 @@ Batch responses now include `batch_id`, `tracking_url` and `qr_code_url`. Existi
 - Batch IDs are random, not sequential. Uniqueness depends on the database constraint and retry, not on the size of the ID space.
 - A phone can scan the QR only if it can reach `TRACKING_BASE_URL` on the local network.
 
+## Local ledger (US-04)
+
+Each product registration is recorded in a local, hash-linked ledger. The ledger is a sequence of blocks in SQLite. Each block contains a SHA-256 hash of its own contents and the hash of the block before it, so a change to any stored block can be detected. This is an academic demonstration in one local application. It is not a distributed blockchain.
+
+### Block structure
+
+| Field | Meaning |
+|---|---|
+| `index` | Sequential block number, starting at 0 |
+| `timestamp` | UTC time the block was created (for backfilled blocks: the event's own time), e.g. `2026-11-26T16:44:53.477Z` |
+| `event_data` | The recorded event as canonical JSON (see below) |
+| `previous_hash` | `block_hash` of the block at `index - 1` |
+| `block_hash` | SHA-256 of this block's input (see below). Not part of its own input |
+| `event_id` | The `supply_chain_events` row the block records (unique: one event, one block) |
+
+A `PRODUCT_REGISTERED` event's data contains: `event_type`, `event_id`, `batch_id`, `actor_role` (`farmer`), `status` (`Registered`), `product_name`, `quantity`, `unit`, `origin` and `harvest_date`. It contains no user names, session values or keys.
+
+### Genesis convention
+
+Block 0 is created when the database is initialised, before any event:
+
+- `index` 0, `timestamp` `1970-01-01T00:00:00.000Z` (fixed), `event_data` `{"event_type":"GENESIS"}`, `previous_hash` 64 zero characters.
+- Its `block_hash` is `20966f2f77cdf6f44a9c38308e39ea2640d576a436e401f39504c3de9447f603`.
+
+### Hash calculation
+
+1. **Event data** is serialised as canonical JSON: keys sorted, no spaces (`separators=(",", ":")`), non-ASCII characters kept as UTF-8, no `NaN` or `Infinity`. Example: `{"event_type":"GENESIS"}`.
+2. **Hash input** is this canonical JSON text, built from four fields. Keys appear in this order:
+
+   ```text
+   {"event_data":<event data text as a JSON string>,"index":<index>,"previous_hash":"<previous hash>","timestamp":"<timestamp>"}
+   ```
+
+   The `event_data` value is the stored event text encoded again as a JSON string. The `block_hash` is not included.
+3. **Block hash** is `SHA-256(UTF-8 bytes of the hash input)`, written as 64 lowercase hex characters. The code uses Python's `hashlib`. It does not use Python's built-in `hash()`.
+
+Changing the event data changes the hash. Changing the previous hash changes the hash. Identical content always gives the same hash. Anyone can recompute a hash from the stored row with the format above.
+
+### Registration integration and transactions
+
+A successful registration writes these rows in one SQLite transaction: the `product_batches` row, the `PRODUCT_REGISTERED` event, and the ledger block. The transaction starts with `BEGIN IMMEDIATE`, so two registrations cannot extend the chain at the same time. If any step fails, the whole transaction is rolled back, so there is never an event without its block or a block without its event.
+
+Idempotency is unchanged from BPT-003. A repeated request with the same `Idempotency-Key` returns the existing batch and creates no batch, event or block.
+
+### Historical backfill and migration
+
+SRS section 7.2 requires each supported event to be in the ledger. Registrations made before this story therefore have blocks added by `python scripts/init_db.py`:
+
+- The `event_id` column and its UNIQUE index are added to `ledger_blocks` with `ALTER TABLE`. The existing rows are kept.
+- The genesis block is created if the ledger is empty.
+- Each `PRODUCT_REGISTERED` event with no block receives one, processed by event time and then event id. The block uses the event's own timestamp, so the chain follows the order events happened.
+- Other event types do not get blocks.
+- Running the script again creates nothing. The local database was checked on a copy: 5 existing registrations became 5 blocks after genesis, with valid hashes and links.
+
+### Ledger API (read-only)
+
+Any active demonstration session (Farmer, Distributor or Retailer) can read the ledger, because the SRS gives demonstration participants access to it. Without a session the response is `401`. Nothing can write to the ledger through the API.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/ledger` | All blocks in index order, with `count` and `latest` |
+| GET | `/api/ledger/latest` | The latest block. `404` if the ledger is empty |
+| GET | `/api/ledger/blocks/<index>` | One block by index. `404` if it does not exist |
+
+Each block in a response has: `index`, `timestamp`, `event_type`, `event_id`, `batch_id`, `event_data`, `previous_hash` and `block_hash`.
+
+### Ledger view
+
+The workspace for every role has a **Local ledger** table showing the block number, timestamp, event, batch ID, previous hash and block hash. The page explains what the hashes show. The table shows the ledger only. It does not verify it: verification is US-07.
+
+### What hash linking does and does not prove
+
+- **Does:** any change to a stored block (its event data, index, timestamp or previous-hash link) changes its hash, so it no longer matches the hash stored in the next block. This makes tampering detectable when the chain is recomputed.
+- **Does not:** prove that the recorded product facts are true. Hashing shows the record did not change, not that the farmer's information was correct.
+- **Does not:** provide decentralised immutability. The chain lives in one local SQLite database. Anyone with write access to that file could rewrite the whole chain, and the ledger has no independent copies or consensus. The SRS says this explicitly.
+- No wallets, tokens, mining, consensus or public network are involved.
+
 ## Testing
 
 Backend (pytest, from `backend/`):
@@ -336,6 +413,9 @@ npm run build
 | POST | `/api/batches` | Farmer registers a product batch (requires `Idempotency-Key`); response includes `batch_id`, `tracking_url`, `qr_code_url` |
 | GET | `/api/batches/by-batch-id/<batch ID>` | Farmer looks up one of their batches by its batch ID |
 | GET | `/api/batches/<id>/qr.png` | Farmer's QR code image (`?download=1` to download) |
+| GET | `/api/ledger` | All ledger blocks in order (any active role) |
+| GET | `/api/ledger/latest` | Latest ledger block (any active role) |
+| GET | `/api/ledger/blocks/<index>` | One ledger block by index (any active role) |
 | GET | `/api/batches` | Farmer's own batches |
 | GET | `/api/batches/<id>` | One of the farmer's batches |
 
@@ -360,6 +440,6 @@ Never commit real `.env` files, virtual environments, `node_modules`, SQLite dat
 ## Known limitations
 
 - Demo role access has no authentication; see [Security limitations](#security-limitations) under Demo role access.
-- No business features yet: no user management, batch management, tracking or ledger logic.
-- The `ledger_blocks` table exists but nothing writes to it until the blockchain story is implemented.
+- No business features yet: no user management, shipment or receipt logic, tracking page or ledger verification.
+- The ledger is a local, single-application hash chain. See Local ledger for what it does and does not prove.
 - SQLite is single-writer; this is acceptable for the local prototype but not for multi-user production load.
