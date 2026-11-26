@@ -19,6 +19,13 @@ vi.mock('./services/healthService.js', () => ({
   fetchHealth: vi.fn(),
 }));
 
+// The farmer workspace also loads batches; keep those calls off the network in these tests.
+vi.mock('./services/batchService.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  fetchBatches: vi.fn().mockResolvedValue([]),
+  createBatch: vi.fn(),
+}));
+
 const ROLES = [
   { key: 'farmer', label: 'Farmer', description: 'Register agricultural product batches.' },
   { key: 'distributor', label: 'Distributor', description: 'View batches and record shipments.' },

@@ -12,9 +12,13 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE INDEX IF NOT EXISTS idx_users_role ON users (role);
 
+-- batch_code stays NULL until the unique batch identifier story (US-03) assigns it.
+-- client_request_id holds the client's Idempotency-Key so a repeated submission cannot
+-- create a second batch. Databases created before BPT-003 are upgraded by app/migrations.py.
 CREATE TABLE IF NOT EXISTS product_batches (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    batch_code     TEXT    NOT NULL UNIQUE CHECK (length(trim(batch_code)) > 0),
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_code        TEXT    UNIQUE CHECK (batch_code IS NULL OR length(trim(batch_code)) > 0),
+    client_request_id TEXT    UNIQUE CHECK (client_request_id IS NULL OR length(trim(client_request_id)) > 0),
     product_name   TEXT    NOT NULL CHECK (length(trim(product_name)) > 0),
     description    TEXT,
     quantity       REAL    NOT NULL CHECK (quantity > 0),

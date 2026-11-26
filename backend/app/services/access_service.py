@@ -42,10 +42,10 @@ def list_roles() -> list[dict[str, str]]:
 
 
 def get_role_actions(role: str) -> list[dict[str, object]]:
-    """Actions available to a role. Every action is listed as not yet available in this story."""
+    """Actions for a role, with whether each is available yet."""
     return [
-        {"key": key, "label": label, "available": False}
-        for key, label in ROLE_ACTIONS[role]
+        {"key": key, "label": label, "available": available}
+        for key, label, available in ROLE_ACTIONS[role]
     ]
 
 

@@ -21,6 +21,7 @@ export default function App() {
   } else if (activeRole) {
     content = (
       <RoleWorkspacePage
+        role={activeRole.role}
         roleLabel={activeRole.role_label}
         roleDescription={activeRoleDetails?.description ?? null}
       />
@@ -66,7 +67,7 @@ export default function App() {
         {content}
       </main>
       <footer className="app-footer">
-        <p>Demonstration build · BPT-002</p>
+        <p>Demonstration build · BPT-003</p>
       </footer>
     </div>
   );

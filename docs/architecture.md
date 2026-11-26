@@ -64,7 +64,7 @@ users 1 ──── * product_batches 1 ──── * supply_chain_events
 | Table | Key constraints |
 |---|---|
 | `users` | PK `id`; `username` UNIQUE; `role` ∈ {farmer, distributor, retailer} |
-| `product_batches` | PK `id`; `batch_code` UNIQUE; `quantity` > 0; FK `created_by` → `users.id` (RESTRICT) |
+| `product_batches` | PK `id`; `batch_code` UNIQUE, nullable until US-03; `client_request_id` UNIQUE (idempotency key, nullable); `quantity` > 0; FK `created_by` → `users.id` (RESTRICT) |
 | `supply_chain_events` | PK `id`; FK `batch_id` → `product_batches.id` (CASCADE); `actor_role` constrained to the three roles |
 | `ledger_blocks` | PK `id`; `block_index` UNIQUE ≥ 0; `block_hash` UNIQUE |
 
@@ -72,7 +72,16 @@ Indexes: `users(role)`, `product_batches(created_by)`, `product_batches(current_
 
 Foreign keys are enforced per connection with `PRAGMA foreign_keys = ON`, since SQLite does not enforce them by default.
 
-`product_batches.current_status` has a default of `CREATED` but is not yet constrained to a value list, because the status lifecycle belongs to a later user story.
+`product_batches.current_status` has a default of `CREATED` but is not yet constrained to a value list, because the status lifecycle belongs to a later user story. Registration sets it to `Registered`.
+
+### Schema upgrades (BPT-003)
+
+`schema.sql` uses `CREATE TABLE IF NOT EXISTS`, so it cannot change an existing table. `app/migrations.py` handles the BPT-002 `product_batches` definition:
+
+1. Before `schema.sql` runs, the old table is renamed to `product_batches_legacy`, with foreign keys off so that `supply_chain_events` keeps pointing at `product_batches`.
+2. `schema.sql` creates the new table. The rows are copied with their original ids, foreign keys are checked, and the legacy table is dropped.
+
+Both steps are idempotent, and an interrupted upgrade completes on the next `init_db` run. No other table is changed.
 
 ## 5. Configuration and environments
 
@@ -91,6 +100,13 @@ Foreign keys are enforced per connection with `PRAGMA foreign_keys = ON`, since 
 - **Frontend:** `useDemoSession` (in `src/hooks/`) mirrors the server session. `App` shows the role-selection screen (`DashboardPage`) when no role is active, or the role workspace (`RoleWorkspacePage`) with the active-role badge and **Exit session** otherwise.
 
 Limitations are listed in the README under "Demo role access". This is a demonstration switch, not authentication.
+
+## 5b. Product batch registration (US-02)
+
+- **Write path:** `POST /api/batches` (`routes/batches.py`) is guarded by `require_role("farmer")`. It reads the farmer from the signed session and re-checks that the user is a farmer in the database. `services/batch_service.py` validates the fields (rules in `models/batch.py`) and writes the batch and its `PRODUCT_REGISTERED` event in one transaction.
+- **Idempotency:** each write carries an `Idempotency-Key`, stored in `client_request_id`. A repeated request returns the existing batch (`200`). A key reused for different details returns `409`. A race between two identical requests is resolved by the unique constraint.
+- **Read path:** `GET /api/batches` and `GET /api/batches/<id>` are limited to the farmer's own batches.
+- **Frontend:** `FarmerBatchPanel` appears in the workspace only for the farmer role. It holds `BatchRegistrationForm` (client-side validation mirroring the server rules), `BatchDetails` (confirmation) and `BatchList`. Each new entry gets a new submission key, and a retry of the same entry reuses it.
 
 ## 6. Planned extensions (not in this foundation)
 
