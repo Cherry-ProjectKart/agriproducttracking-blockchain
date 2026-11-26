@@ -64,7 +64,7 @@ users 1 ──── * product_batches 1 ──── * supply_chain_events
 | Table | Key constraints |
 |---|---|
 | `users` | PK `id`; `username` UNIQUE; `role` ∈ {farmer, distributor, retailer} |
-| `product_batches` | PK `id`; `batch_code` UNIQUE, nullable until US-03; `client_request_id` UNIQUE (idempotency key, nullable); `quantity` > 0; FK `created_by` → `users.id` (RESTRICT) |
+| `product_batches` | PK `id`; `batch_code` UNIQUE batch ID (`PB-XXXX-XXXX`, required by trigger); `client_request_id` UNIQUE (idempotency key, nullable); `quantity` > 0; FK `created_by` → `users.id` (RESTRICT) |
 | `supply_chain_events` | PK `id`; FK `batch_id` → `product_batches.id` (CASCADE); `actor_role` constrained to the three roles |
 | `ledger_blocks` | PK `id`; `block_index` UNIQUE ≥ 0; `block_hash` UNIQUE |
 
@@ -107,6 +107,16 @@ Limitations are listed in the README under "Demo role access". This is a demonst
 - **Idempotency:** each write carries an `Idempotency-Key`, stored in `client_request_id`. A repeated request returns the existing batch (`200`). A key reused for different details returns `409`. A race between two identical requests is resolved by the unique constraint.
 - **Read path:** `GET /api/batches` and `GET /api/batches/<id>` are limited to the farmer's own batches.
 - **Frontend:** `FarmerBatchPanel` appears in the workspace only for the farmer role. It holds `BatchRegistrationForm` (client-side validation mirroring the server rules), `BatchDetails` (confirmation) and `BatchList`. Each new entry gets a new submission key, and a retry of the same entry reuses it.
+
+## 5c. Batch IDs and QR codes (US-03)
+
+- **Batch ID:** `PB-XXXX-XXXX` (Crockford base32, random via `secrets`), in `product_batches.batch_code`. Generated in `services/batch_identifiers.py` and stored in the same transaction as the batch. Uniqueness: `UNIQUE` on `batch_code`, with a retry on collision (up to 10 attempts).
+- **Required ID:** BEFORE INSERT and BEFORE UPDATE triggers in `schema.sql` reject a NULL `batch_code`.
+- **Backfill:** `migrations.backfill_batch_ids` runs in `init_db` after the schema step. It assigns an ID only to batches that have none, in one transaction, and it is safe to repeat.
+- **Tracking URL:** `{TRACKING_BASE_URL}/track/{batch ID}`, built in `services/qr_service.py`. `TRACKING_BASE_URL` (default `http://localhost:5173`) is validated at startup.
+- **QR code:** PNG, error-correction level M, generated on request by `segno` and served from `GET /api/batches/<id>/qr.png` to the owning farmer only. Nothing is stored. The image encodes only the tracking URL.
+- **Frontend:** `BatchQrCode` shows the image, the tracking URL and a download link. `BatchDetails` shows the batch ID. `BatchList` shows the ID and opens a batch's QR code.
+- **Scope:** the `/track/<batch ID>` page belongs to US-08. Until it is built, the URL opens the app's start page.
 
 ## 6. Planned extensions (not in this foundation)
 

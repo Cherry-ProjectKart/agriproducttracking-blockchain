@@ -1,6 +1,7 @@
 import { formatQuantity, formatTimestamp } from './batchFormatters.js';
+import BatchQrCode from './BatchQrCode.jsx';
 
-/** Read-only summary of one registered batch. */
+/** Summary of one registered batch: its ID, product details, and QR code. */
 export default function BatchDetails({ batch, headingId = 'batch-details-heading' }) {
   return (
     <section className="batch-details" aria-labelledby={headingId}>
@@ -8,6 +9,12 @@ export default function BatchDetails({ batch, headingId = 'batch-details-heading
         {batch.product_name}
       </h3>
       <dl className="batch-details__list">
+        <div>
+          <dt>Batch ID</dt>
+          <dd>
+            <code className="batch-id">{batch.batch_id}</code>
+          </dd>
+        </div>
         <div>
           <dt>Description</dt>
           <dd>{batch.description || 'Not provided'}</dd>
@@ -33,6 +40,7 @@ export default function BatchDetails({ batch, headingId = 'batch-details-heading
           <dd>{formatTimestamp(batch.created_at)}</dd>
         </div>
       </dl>
+      <BatchQrCode batch={batch} />
     </section>
   );
 }

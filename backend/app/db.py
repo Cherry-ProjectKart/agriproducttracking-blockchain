@@ -5,7 +5,11 @@ from pathlib import Path
 
 from flask import Flask, current_app, g
 
-from app.migrations import complete_product_batches_upgrade, retire_outdated_product_batches
+from app.migrations import (
+    backfill_batch_ids,
+    complete_product_batches_upgrade,
+    retire_outdated_product_batches,
+)
 from app.services.access_service import seed_demo_users
 
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
@@ -47,6 +51,7 @@ def init_db(database_path: str) -> list[str]:
         retire_outdated_product_batches(conn)
         conn.executescript(schema)
         complete_product_batches_upgrade(conn)
+        backfill_batch_ids(conn)
         seed_demo_users(conn)
         conn.commit()
     finally:

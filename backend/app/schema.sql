@@ -33,6 +33,23 @@ CREATE TABLE IF NOT EXISTS product_batches (
 CREATE INDEX IF NOT EXISTS idx_product_batches_created_by ON product_batches (created_by);
 CREATE INDEX IF NOT EXISTS idx_product_batches_status ON product_batches (current_status);
 
+-- Every batch must have its unique batch ID (batch_code, US-03). The column is nullable in the
+-- table definition only so that app/migrations.py can rebuild older tables; these triggers keep
+-- the rule enforced. The UNIQUE constraint on batch_code enforces uniqueness.
+CREATE TRIGGER IF NOT EXISTS product_batches_id_required_on_insert
+BEFORE INSERT ON product_batches
+WHEN NEW.batch_code IS NULL
+BEGIN
+    SELECT RAISE(ABORT, 'batch_code (batch ID) is required');
+END;
+
+CREATE TRIGGER IF NOT EXISTS product_batches_id_required_on_update
+BEFORE UPDATE OF batch_code ON product_batches
+WHEN NEW.batch_code IS NULL
+BEGIN
+    SELECT RAISE(ABORT, 'batch_code (batch ID) cannot be cleared');
+END;
+
 CREATE TABLE IF NOT EXISTS supply_chain_events (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     batch_id        INTEGER NOT NULL REFERENCES product_batches (id) ON DELETE CASCADE,
