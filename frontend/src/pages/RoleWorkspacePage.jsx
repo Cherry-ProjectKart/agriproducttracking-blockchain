@@ -3,6 +3,8 @@ import FarmerBatchPanel from '../components/batches/FarmerBatchPanel.jsx';
 import DistributorShipmentPanel from '../components/shipments/DistributorShipmentPanel.jsx';
 import RetailerReceiptPanel from '../components/receipts/RetailerReceiptPanel.jsx';
 import LedgerView from '../components/ledger/LedgerView.jsx';
+import BatchHistoryPanel from '../components/history/BatchHistoryPanel.jsx';
+import LedgerVerificationPanel from '../components/history/LedgerVerificationPanel.jsx';
 import { fetchRoleActions } from '../services/accessService.js';
 
 const LOAD_ERROR = 'Could not load the actions for this role. Make sure the backend is running.';
@@ -65,6 +67,8 @@ export default function RoleWorkspacePage({ role, roleLabel, roleDescription }) 
         </ul>
       ) : null}
 
+      <BatchHistoryPanel />
+      <LedgerVerificationPanel />
       <LedgerView />
     </section>
   );
