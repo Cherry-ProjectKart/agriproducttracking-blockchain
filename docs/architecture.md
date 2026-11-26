@@ -136,7 +136,17 @@ Limitations are listed in the README under "Demo role access". This is a demonst
 - **Idempotency:** `supply_chain_events.client_request_id` holds the `Idempotency-Key`, with a UNIQUE index added by `migrations.ensure_event_request_key`. A repeat with the same details returns the stored result. Different details return `409`.
 - **Read path:** `GET /api/shipments/batches` lists every registered batch for distributors. It does not include the farmer's identity.
 - **Frontend:** `DistributorShipmentPanel`, rendered only for the distributor role. It has the batch selection table, the status selector, the note, and the saved confirmation with the block number and hash. The batch list refreshes after each save.
-- **Scope:** Retailer receipt (`Received by Retailer`) is US-06. Shipments do not change the batch to that status.
+- **Scope:** shipments never set `Received by Retailer`. That status belongs to US-06 (section 5f).
+
+## 5f. Retailer receipt confirmation (US-06)
+
+- **Statuses:** `models/receipt.py` defines the eligible status (`Delivered to Retailer`), the received status (`Received by Retailer`) and the event type `RECEIPT_CONFIRMED`, with actor `retailer`.
+- **Write path:** `POST /api/receipts` (`routes/receipts.py`) is guarded by `require_role("retailer")` and re-checks the retailer in the database. `services/receipt_service.py` runs one `BEGIN IMMEDIATE` transaction: the eligibility check, the status update, the event insert and `ledger_service.append_block`. Any failure rolls all of them back.
+- **Eligibility:** only `Delivered to Retailer` can move to `Received by Retailer`. Other statuses, and an already received batch, return `409`.
+- **Idempotency:** the event's `client_request_id` (from BPT-006) holds the `Idempotency-Key`. A repeat with the same key returns the stored receipt. A new key on a received batch is refused.
+- **Read path:** `GET /api/receipts/awaiting` lists batches with status `Delivered to Retailer`, without farmer identity.
+- **Schema:** no change. The existing columns and the request-key index carry the receipt.
+- **Frontend:** `RetailerReceiptPanel`, rendered only for the retailer role, with batch selection, a confirmation step and the saved receipt.
 
 ## 6. Planned extensions (not in this foundation)
 

@@ -2,7 +2,7 @@
 
 A blockchain-enabled system for tracing agricultural products from farm to retail. Every supply-chain event is recorded in a tamper-evident ledger so that a product's journey can be verified by farmers, distributors, retailers and consumers.
 
-> **Status:** distributor shipment updates (BPT-006, US-05) on top of the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001). Retailer receipt confirmation, ledger verification and the consumer tracking page are not implemented yet.
+> **Status:** retailer receipt confirmation (BPT-007, US-06) on top of distributor shipment updates (BPT-006, US-05), the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001). Batch history and integrity verification (US-07) and the consumer tracking page (US-08) are not implemented yet.
 
 ## Technology stack
 
@@ -404,7 +404,7 @@ A distributor records the shipment or movement status of a registered batch. Eac
 
 These three values come from the sprint plan (US-05: "Shipped / In Transit / Delivered to Retailer") and the SRS business rules ("Shipped or In Transit"). The same values are used in the form, the API, the database, the event data and the ledger.
 
-Choosing *Delivered to Retailer* does not mark the batch as received. Retailer receipt confirmation (`Received by Retailer`) is US-06.
+Choosing *Delivered to Retailer* does not mark the batch as received. That happens only when a retailer confirms receipt (US-06, see Retailer receipt confirmation below).
 
 Every batch starts as `Registered`. The status changes to the latest shipment status, and each change is kept as its own event.
 
@@ -449,6 +449,61 @@ Successful responses contain `batch` (`batch_id`, `current_status`), `event` (`e
 - No other table changed. `product_batches.current_status` already existed and is now updated by shipments.
 - The migration was run on a copy of the local database: the events, batches, users and ledger were all kept and the foreign-key check was clean.
 
+## Retailer receipt confirmation (US-06)
+
+A retailer confirms that a batch has arrived. The batch then moves from `Delivered to Retailer` to `Received by Retailer`, and the confirmation is recorded in the ledger.
+
+### Workflow
+
+1. Choose **Retailer** on the role screen. The workspace lists the batches awaiting receipt: those whose status is `Delivered to Retailer`. Each row shows the batch ID, product, origin, quantity and current status.
+2. Select a batch. The panel states that its status will change to `Received by Retailer`.
+3. Select **Confirm receipt**. The button shows *Confirming…* until the server answers.
+4. On success, the confirmation shows the batch ID, the new status, the ledger block number and its hash. The batch leaves the list.
+
+Batches that are `Registered`, `Shipped` or `In Transit` are not awaiting receipt, and the API refuses to confirm them. A batch that is already received cannot be confirmed again.
+
+### Business rule
+
+| Actor | Action | Result |
+|---|---|---|
+| Retailer | Confirm receipt of a `Delivered to Retailer` batch | `Received by Retailer`; `RECEIPT_CONFIRMED` event; one ledger block |
+
+The retailer is taken from the signed demo session. The request body cannot set the actor.
+
+### Recording and atomicity
+
+A confirmation writes three things in one SQLite transaction (`BEGIN IMMEDIATE`): the batch status change, the `RECEIPT_CONFIRMED` event, and the ledger block. The eligibility check runs inside that transaction, so two confirmations at the same time cannot both succeed. If the ledger block cannot be written, the status change and the event are rolled back as well. The batch then remains `Delivered to Retailer`.
+
+The event has `actor_role` `retailer`, `status` `Received by Retailer` and the event timestamp. Its ledger block has the same event data and links to the block before it, using the same hashing as the other events (see Local ledger).
+
+### Repeated requests
+
+Like the other write endpoints, confirmation requires an `Idempotency-Key` header. Sending the same key again returns the stored receipt (`200`) and writes nothing. Sending a new key for a batch that is already received returns `409`, so a second receipt is never recorded.
+
+### Role restrictions
+
+- Only an active **Retailer** session can list awaiting batches or confirm receipt. Farmer and Distributor sessions get `403`. No session gets `401`.
+- The Retailer panel is shown only in the Retailer workspace, and only that role loads its data.
+- The awaiting list contains no farmer identity.
+
+### API
+
+| Method | Path | Access | Description |
+|---|---|---|---|
+| GET | `/api/receipts/awaiting` | Retailer | Batches with status `Delivered to Retailer` |
+| POST | `/api/receipts` | Retailer, `Idempotency-Key` required | Body `{"batch_id": "PB-XXXX-XXXX"}`. `201` confirmed, `200` repeated request, `400` invalid or missing batch ID, `404` unknown batch, `409` not awaiting receipt, already received, or key reused for another batch |
+
+Successful responses contain `batch` (`batch_id`, `current_status`), `event` (`event_id`, `event_type`, `actor_role`, `batch_id`, `status`, `timestamp`) and `ledger_block` (`index`, `block_hash`, `previous_hash`).
+
+### Database changes
+
+None. The existing `product_batches.current_status`, `supply_chain_events` (including the request key from BPT-006) and `ledger_blocks` store the receipt. The schema is unchanged, and `init_db` on an existing database leaves its data and schema as they were.
+
+### Limitations
+
+- Receipt is recorded only as a status change and an event. The retailer cannot add a note, and there is no receipt history view. The ledger view shows the event.
+- The demo cannot prove that the physical goods arrived. The ledger records the confirmation, not the goods.
+
 ## Testing
 
 Backend (pytest, from `backend/`):
@@ -482,6 +537,8 @@ npm run build
 | GET | `/api/batches/<id>/qr.png` | Farmer's QR code image (`?download=1` to download) |
 | GET | `/api/shipments/batches` | Distributor's list of registered batches for shipment updates |
 | POST | `/api/shipments` | Distributor records a shipment update (requires `Idempotency-Key`) |
+| GET | `/api/receipts/awaiting` | Retailer's batches awaiting receipt |
+| POST | `/api/receipts` | Retailer confirms receipt of a batch (requires `Idempotency-Key`) |
 | GET | `/api/ledger` | All ledger blocks in order (any active role) |
 | GET | `/api/ledger/latest` | Latest ledger block (any active role) |
 | GET | `/api/ledger/blocks/<index>` | One ledger block by index (any active role) |
@@ -509,6 +566,6 @@ Never commit real `.env` files, virtual environments, `node_modules`, SQLite dat
 ## Known limitations
 
 - Demo role access has no authentication; see [Security limitations](#security-limitations) under Demo role access.
-- No business features yet: no user management, retailer receipt confirmation, tracking page or ledger verification.
+- No business features yet: no user management, batch history view, tracking page or ledger verification.
 - The ledger is a local, single-application hash chain. See Local ledger for what it does and does not prove.
 - SQLite is single-writer; this is acceptable for the local prototype but not for multi-user production load.
