@@ -16,6 +16,7 @@ from app.db import get_db
 from app.errors import ApiError
 from app.models.roles import SUPPORTED_ROLES
 from app.services.ledger_service import get_block, get_latest_block, list_blocks
+from app.services.ledger_verification import verify_ledger
 
 ledger_bp = Blueprint("ledger", __name__)
 
@@ -41,6 +42,16 @@ def latest_block():
     if block is None:
         raise ApiError(404, "The ledger has no blocks.")
     return jsonify({"block": block}), 200
+
+
+@ledger_bp.get("/ledger/verify")
+@require_role(*SUPPORTED_ROLES)
+def verify_ledger_route():
+    """Independent integrity check of the whole ledger (US-07). Read-only: nothing is repaired or appended.
+
+    A failed check is a result, not an error, so both valid and invalid outcomes return 200.
+    """
+    return jsonify(verify_ledger(get_db())), 200
 
 
 @ledger_bp.get("/ledger/blocks/<int:index>")

@@ -148,6 +148,15 @@ Limitations are listed in the README under "Demo role access". This is a demonst
 - **Schema:** no change. The existing columns and the request-key index carry the receipt.
 - **Frontend:** `RetailerReceiptPanel`, rendered only for the retailer role, with batch selection, a confirmation step and the saved receipt.
 
+## 5g. Batch history and ledger verification (US-07)
+
+- **History:** `services/history_service.py` returns one batch's `PRODUCT_REGISTERED`, `SHIPMENT_UPDATED` and `RECEIPT_CONFIRMED` events, ordered by `event_timestamp` then `id`, with the block index from `ledger_blocks` (joined on `event_id`). Served by `GET /api/history/<batch ID>` (`routes/history.py`).
+- **Verification:** `services/ledger_verification.py` reads every block and does not trust the stored hashes. It recalculates each block hash with `ledger_service.compute_block_hash`, the BPT-005 algorithm, and checks the previous-hash links against those recalculated values. It also checks genesis, sequence, canonical serialisation, timestamp and hash formats, event references and that each supported event has one block. Served by `GET /api/ledger/verify` (`routes/ledger.py`).
+- **Read-only:** the verifier sets `PRAGMA query_only` while it runs and restores the previous setting afterwards. It never appends, repairs or deletes.
+- **Result:** `result` is `valid` only when no check fails. Each failure names the block index (or none, for ledger-wide problems), the check and a reason.
+- **Frontend:** `BatchHistoryPanel` and `LedgerVerificationPanel` appear in every workspace. Neither loads anything until the user acts, and Valid or Invalid is shown only after the server has answered.
+- **Scope:** no schema change and no new role. The consumer tracking page (US-08) is not part of this story.
+
 ## 6. Planned extensions (not in this foundation)
 
 - **QR codes:** the Python `qrcode` library will generate codes that reference a batch.

@@ -2,7 +2,7 @@
 
 A blockchain-enabled system for tracing agricultural products from farm to retail. Every supply-chain event is recorded in a tamper-evident ledger so that a product's journey can be verified by farmers, distributors, retailers and consumers.
 
-> **Status:** retailer receipt confirmation (BPT-007, US-06) on top of distributor shipment updates (BPT-006, US-05), the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001). Batch history and integrity verification (US-07) and the consumer tracking page (US-08) are not implemented yet.
+> **Status:** batch history and ledger integrity verification (BPT-008, US-07) on top of retailer receipt confirmation (BPT-007, US-06), distributor shipment updates (BPT-006, US-05), the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001). The consumer tracking page (US-08) is not implemented yet.
 
 ## Technology stack
 
@@ -373,7 +373,7 @@ Each block in a response has: `index`, `timestamp`, `event_type`, `event_id`, `b
 
 ### Ledger view
 
-The workspace for every role has a **Local ledger** table showing the block number, timestamp, event, batch ID, previous hash and block hash. The page explains what the hashes show. The table shows the ledger only. It does not verify it: verification is US-07.
+The workspace for every role has a **Local ledger** table showing the block number, timestamp, event, batch ID, previous hash and block hash. The page explains what the hashes show. The table shows the ledger only. Verification is a separate action (see Batch history and ledger integrity below).
 
 ### What hash linking does and does not prove
 
@@ -504,6 +504,85 @@ None. The existing `product_batches.current_status`, `supply_chain_events` (incl
 - Receipt is recorded only as a status change and an event. The retailer cannot add a note, and there is no receipt history view. The ledger view shows the event.
 - The demo cannot prove that the physical goods arrived. The ledger records the confirmation, not the goods.
 
+## Batch history and ledger integrity (US-07)
+
+A reviewer can see what happened to a batch, and check that the local ledger has not been altered. Both features are read-only. This is a local hash-linked ledger demonstration: it stores its records in one SQLite file on this computer. It is not a decentralised or public blockchain, and it cannot prove that the recorded facts are true.
+
+### Batch history
+
+Open the **Batch history** panel in any workspace and enter a batch ID such as `PB-7K2M-9QXD`. The panel lists the batch's events in order:
+
+| Event | Label | Recorded by | Status shown |
+|---|---|---|---|
+| `PRODUCT_REGISTERED` | Registration | Farmer | `Registered` |
+| `SHIPMENT_UPDATED` | Shipment | Distributor | `Shipped`, `In Transit` or `Delivered to Retailer` |
+| `RECEIPT_CONFIRMED` | Receipt | Retailer | `Received by Retailer` |
+
+Each event shows its actor role, status, note (or "No note"), timestamp and the ledger block that records it.
+
+- Events are ordered by their timestamp, then by event ID. The order is the same every time.
+- Only events for the requested batch are listed. Each event appears once.
+- An unknown batch ID shows "No batch has the ID …". A malformed ID is refused before any request is sent.
+- A batch with no events shows an empty message.
+
+### Ledger integrity verification
+
+Select **Verify ledger** in any workspace. The server reads every block and recalculates its hash from the stored contents, using the same algorithm and canonical serialisation as the ledger itself (BPT-005). The stored block hashes are not trusted. Nothing is repaired, changed or appended.
+
+The checks, in the order they run:
+
+| Check | What it confirms |
+|---|---|
+| Genesis block | Block 0 has the documented timestamp, event data `{"event_type":"GENESIS"}` and a previous hash of 64 zeros |
+| Sequential block indexes | Blocks are numbered 0, 1, 2, … with no gaps, repeats or reordering |
+| Canonical event data | Each block's stored event data is valid JSON in canonical form, which is what is hashed |
+| Timestamp format | Each timestamp is UTC with milliseconds and a `Z` suffix |
+| Hash format | Each stored hash is 64 lowercase hexadecimal characters |
+| Previous-hash links | Each block's previous hash equals the **recalculated** hash of the block before it |
+| Block hashes recalculated | Each block's stored hash equals the hash recalculated from its contents |
+| Event references | A block that names a supply-chain event refers to a real event with the same ID, type and batch |
+| Every supported event has a block | Each registration, shipment and receipt event has exactly one block |
+
+### Valid and Invalid outcomes
+
+- **Valid:** every check passed for every block. The panel says how many blocks passed.
+- **Invalid:** at least one check failed. The panel names the first failing block, lists each failure with its block number and reason, and shows which checks passed or failed. Failures that are not tied to one block (for example a missing block) are labelled "Ledger-wide".
+- The result is shown only after the server has finished the check. A network or server error is shown as an error, not as a result.
+
+Because links are checked against recalculated hashes, changing a stored block is detected even when its stored hash is changed to match. A change to a block shows as a failed block hash, and it also breaks the next block's link when the stored hash is left in place.
+
+### Tested tampering
+
+The test suite and a copy of the local database were checked with these changes. In each case the verifier reported Invalid and named the block:
+
+- a changed event payload
+- a changed timestamp
+- a changed stored block hash
+- a broken previous-hash link
+- a deleted block (a gap in the indexes, a broken link, and an uncovered event)
+- swapped block indexes
+- a changed genesis block
+- event data that is not in canonical form
+- an empty ledger
+
+The live database was never modified by these checks.
+
+### API
+
+| Method | Path | Access | Description |
+|---|---|---|---|
+| GET | `/api/history/<batch ID>` | Any active session | Chronological events for one batch. `400` malformed ID, `404` unknown batch |
+| GET | `/api/ledger/verify` | Any active session | Runs the full ledger check. Returns `200` for both Valid and Invalid results. `401` without a session |
+
+Example result from `/api/ledger/verify`: `{"result": "valid", "checked_blocks": 18, "latest_block_index": 17, "recalculated_latest_hash": "…", "first_failing_block": null, "checks": [{"id", "label", "passed"}], "failures": [], "verified_at": "…"}`. For an invalid ledger, `result` is `"invalid"` and `failures` lists `{"block_index", "check", "reason"}` entries.
+
+### Limitations
+
+- Verification proves that the stored records still match their hashes and links. It cannot prove that a farmer, distributor or retailer recorded true information.
+- The ledger lives in one SQLite file. Anyone with write access to that file can rewrite the whole chain and recalculate every hash. The ledger has no independent copies, consensus or outside witness. Verification detects edits made without recalculating the chain.
+- Verification is run on request. Nothing runs automatically, and the result is not stored.
+- The history and verification views are available to every demonstration role. There is no reviewer role.
+
 ## Testing
 
 Backend (pytest, from `backend/`):
@@ -537,6 +616,8 @@ npm run build
 | GET | `/api/batches/<id>/qr.png` | Farmer's QR code image (`?download=1` to download) |
 | GET | `/api/shipments/batches` | Distributor's list of registered batches for shipment updates |
 | POST | `/api/shipments` | Distributor records a shipment update (requires `Idempotency-Key`) |
+| GET | `/api/history/<batch ID>` | Batch history: registration, shipment and receipt events in order (any active role) |
+| GET | `/api/ledger/verify` | Independent ledger integrity check: Valid or Invalid with details (any active role) |
 | GET | `/api/receipts/awaiting` | Retailer's batches awaiting receipt |
 | POST | `/api/receipts` | Retailer confirms receipt of a batch (requires `Idempotency-Key`) |
 | GET | `/api/ledger` | All ledger blocks in order (any active role) |
@@ -566,6 +647,6 @@ Never commit real `.env` files, virtual environments, `node_modules`, SQLite dat
 ## Known limitations
 
 - Demo role access has no authentication; see [Security limitations](#security-limitations) under Demo role access.
-- No business features yet: no user management, batch history view, tracking page or ledger verification.
+- No business features yet: no user management and no consumer tracking page.
 - The ledger is a local, single-application hash chain. See Local ledger for what it does and does not prove.
 - SQLite is single-writer; this is acceptable for the local prototype but not for multi-user production load.
