@@ -6,9 +6,11 @@ from app.routes.access import access_bp
 from app.routes.batches import batches_bp
 from app.routes.health import health_bp
 from app.routes.ledger import ledger_bp
+from app.routes.shipments import shipments_bp
 
 api_bp = Blueprint("api", __name__)
 api_bp.register_blueprint(health_bp)
 api_bp.register_blueprint(access_bp)
 api_bp.register_blueprint(batches_bp)
 api_bp.register_blueprint(ledger_bp)
+api_bp.register_blueprint(shipments_bp)

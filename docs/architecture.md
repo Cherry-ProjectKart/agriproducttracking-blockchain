@@ -129,6 +129,15 @@ Limitations are listed in the README under "Demo role access". This is a demonst
 - **Frontend:** `LedgerView` (in every workspace) lists the blocks.
 - **Scope:** verification of the chain (US-07) is not implemented. The hashes are shown so the chain can be checked by hand.
 
+## 5e. Distributor shipment updates (US-05)
+
+- **Statuses:** `models/shipment.py` lists `Shipped`, `In Transit` and `Delivered to Retailer`, the only values accepted. The same strings are used in the form (`utils/shipmentValidation.js`), the database, the event and the ledger payload.
+- **Write path:** `POST /api/shipments` (`routes/shipments.py`) is guarded by `require_role("distributor")` and re-checks the distributor in the database. `services/shipment_service.py` validates the input and then, in one `BEGIN IMMEDIATE` transaction, updates `product_batches.current_status`, inserts a `SHIPMENT_UPDATED` event and appends the block through the existing `ledger_service.append_block`. Any failure rolls all three back.
+- **Idempotency:** `supply_chain_events.client_request_id` holds the `Idempotency-Key`, with a UNIQUE index added by `migrations.ensure_event_request_key`. A repeat with the same details returns the stored result. Different details return `409`.
+- **Read path:** `GET /api/shipments/batches` lists every registered batch for distributors. It does not include the farmer's identity.
+- **Frontend:** `DistributorShipmentPanel`, rendered only for the distributor role. It has the batch selection table, the status selector, the note, and the saved confirmation with the block number and hash. The batch list refreshes after each save.
+- **Scope:** Retailer receipt (`Received by Retailer`) is US-06. Shipments do not change the batch to that status.
+
 ## 6. Planned extensions (not in this foundation)
 
 - **QR codes:** the Python `qrcode` library will generate codes that reference a batch.

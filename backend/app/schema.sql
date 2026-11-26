@@ -57,7 +57,10 @@ CREATE TABLE IF NOT EXISTS supply_chain_events (
     actor_role      TEXT    NOT NULL CHECK (actor_role IN ('farmer', 'distributor', 'retailer')),
     status          TEXT    NOT NULL CHECK (length(trim(status)) > 0),
     note            TEXT,
-    event_timestamp TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    event_timestamp TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    -- Idempotency key of the request that created a shipment event (BPT-006). Its UNIQUE index is
+    -- created by app/migrations.py so that existing databases can be upgraded with ALTER TABLE.
+    client_request_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_supply_chain_events_batch_time

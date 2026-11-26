@@ -8,6 +8,7 @@ from flask import Flask, current_app, g
 from app.migrations import (
     backfill_batch_ids,
     complete_product_batches_upgrade,
+    ensure_event_request_key,
     ensure_ledger_event_reference,
     retire_outdated_product_batches,
 )
@@ -55,6 +56,7 @@ def init_db(database_path: str) -> list[str]:
         complete_product_batches_upgrade(conn)
         backfill_batch_ids(conn)
         ensure_ledger_event_reference(conn)
+        ensure_event_request_key(conn)
         ensure_genesis(conn)
         conn.commit()
         backfill_registration_ledger(conn)

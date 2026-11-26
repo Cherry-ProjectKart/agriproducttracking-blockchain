@@ -111,6 +111,21 @@ def ensure_ledger_event_reference(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def ensure_event_request_key(conn: sqlite3.Connection) -> None:
+    """Add supply_chain_events.client_request_id and its UNIQUE index (BPT-006). Safe to run repeatedly.
+
+    A shipment request with a repeated Idempotency-Key must not create a second event. Existing
+    events keep NULL here: only requests made through the shipment endpoint set a key.
+    """
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(supply_chain_events)")}
+    if "client_request_id" not in columns:
+        conn.execute("ALTER TABLE supply_chain_events ADD COLUMN client_request_id TEXT")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_supply_chain_events_request_key ON supply_chain_events (client_request_id)"
+    )
+    conn.commit()
+
+
 def backfill_batch_ids(conn: sqlite3.Connection) -> list[str]:
     """Step 3: give every batch that has no batch ID a unique one (US-03).
 

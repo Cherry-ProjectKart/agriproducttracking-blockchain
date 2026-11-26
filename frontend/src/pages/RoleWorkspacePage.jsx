@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import FarmerBatchPanel from '../components/batches/FarmerBatchPanel.jsx';
+import DistributorShipmentPanel from '../components/shipments/DistributorShipmentPanel.jsx';
 import LedgerView from '../components/ledger/LedgerView.jsx';
 import { fetchRoleActions } from '../services/accessService.js';
 
@@ -37,6 +38,7 @@ export default function RoleWorkspacePage({ role, roleLabel, roleDescription }) 
       {roleDescription ? <p className="dashboard__description">{roleDescription}</p> : null}
 
       {role === 'farmer' ? <FarmerBatchPanel /> : null}
+      {role === 'distributor' ? <DistributorShipmentPanel /> : null}
 
       <h2 className="dashboard__section-heading">Available actions</h2>
       {state.status === 'loading' ? <p role="status">Loading actions…</p> : null}

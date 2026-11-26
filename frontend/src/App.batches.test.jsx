@@ -26,6 +26,11 @@ vi.mock('./services/healthService.js', () => ({
   fetchHealth: vi.fn(),
 }));
 
+vi.mock('./services/shipmentService.js', () => ({
+  fetchShipmentBatches: vi.fn().mockResolvedValue([]),
+  createShipment: vi.fn(),
+}));
+
 vi.mock('./services/ledgerService.js', () => ({
   fetchLedger: vi.fn().mockResolvedValue({ count: 0, latest: null, blocks: [] }),
 }));
