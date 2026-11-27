@@ -1,57 +1,83 @@
-"""Demo role session handling and server-side role enforcement.
+"""Session-based sign-in and server-side role enforcement (BPT-101).
 
-The active role is stored in Flask's signed session cookie. The cookie is signed with
-SECRET_KEY, so the browser cannot change its role without the server rejecting it.
+The session is Flask's signed cookie. It stores only the account id and the time it was issued.
+Every request re-reads the account from the database, so the role always comes from the persisted
+account record, never from the browser. An account that is missing, disabled or whose role is no
+longer supported is treated as signed out.
 
-This is a localhost demonstration mechanism, not production authentication. See
-README.md ("Demo role access") for the limitations.
+require_role(...) is unchanged in contract: 401 without a valid session, 403 for a disallowed role.
 """
 
+import time
 from collections.abc import Callable
 from functools import wraps
 from typing import Any
 
-from flask import session
+from flask import current_app, session
 
+from app.db import get_db
 from app.errors import ApiError
+from app.models.account import ACCOUNT_STATUS_ACTIVE
 from app.models.roles import SUPPORTED_ROLES
+from app.services.account_service import get_user_by_id
 
-SESSION_KEY = "demo_access"
+SESSION_KEY = "account_session"
 
 
-def start_demo_session(role: str, user_id: int, display_name: str) -> None:
-    """Replace any existing session with one for the given supported role."""
-    if role not in SUPPORTED_ROLES:
-        raise ValueError(f"Unsupported role: {role!r}")
+def start_account_session(user_id: int) -> None:
+    """Replace any existing session with one for this account. Session fixation is prevented by clearing first."""
     session.clear()
-    session[SESSION_KEY] = {"role": role, "user_id": user_id, "display_name": display_name}
-    session.permanent = False
+    session[SESSION_KEY] = {"user_id": user_id, "issued_at": int(time.time())}
+    session.permanent = True
 
 
-def end_demo_session() -> None:
-    """Remove all session data, including the active role."""
+def end_account_session() -> None:
+    """Remove all session data. Idempotent."""
     session.clear()
 
 
-def current_demo_session() -> dict[str, Any] | None:
-    """Return the active demo session, or None when there is none or its role is not supported."""
+def _lifetime_seconds() -> int:
+    return int(current_app.config["SESSION_LIFETIME_SECONDS"])
+
+
+def current_account() -> dict[str, Any] | None:
+    """Return the signed-in account as stored in the database, or None.
+
+    Returns None (and clears the cookie data) when the session is missing, malformed, expired, or
+    its account no longer exists, is disabled, or has an unsupported role.
+    """
     raw = session.get(SESSION_KEY)
     if not isinstance(raw, dict):
         return None
-    role = raw.get("role")
-    if not isinstance(role, str) or role not in SUPPORTED_ROLES:
+    user_id = raw.get("user_id")
+    issued_at = raw.get("issued_at")
+    if not isinstance(user_id, int) or isinstance(user_id, bool) or not isinstance(issued_at, int):
+        session.clear()
+        return None
+    if time.time() - issued_at > _lifetime_seconds():
+        session.clear()
+        return None
+
+    user = get_user_by_id(get_db(), user_id)
+    if (
+        user is None
+        or user["status"] != ACCOUNT_STATUS_ACTIVE
+        or user["role"] not in SUPPORTED_ROLES
+    ):
+        session.clear()
         return None
     return {
-        "role": role,
-        "user_id": raw.get("user_id"),
-        "display_name": raw.get("display_name"),
+        "user_id": user["id"],
+        "role": user["role"],
+        "display_name": user["display_name"],
+        "username": user["username"],
     }
 
 
 def require_role(*allowed_roles: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """Decorator: allow the request only when the active demo role is one of allowed_roles.
+    """Decorator: allow the request only when the signed-in account's role is one of allowed_roles.
 
-    Responds 401 when there is no active session and 403 when the active role is not allowed.
+    Responds 401 when there is no valid sign-in and 403 when the account's role is not allowed.
     Misconfigured decorators (no roles, or unsupported role names) fail at import time.
     """
     if not allowed_roles:
@@ -63,11 +89,11 @@ def require_role(*allowed_roles: str) -> Callable[[Callable[..., Any]], Callable
     def decorator(view: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(view)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            active = current_demo_session()
+            active = current_account()
             if active is None:
-                raise ApiError(401, "Select a role to sign in to the demonstration.")
+                raise ApiError(401, "Sign in to continue.")
             if active["role"] not in allowed_roles:
-                raise ApiError(403, "Your active role is not permitted to perform this action.")
+                raise ApiError(403, "Your account's role is not permitted to perform this action.")
             return view(*args, **kwargs)
 
         return wrapper

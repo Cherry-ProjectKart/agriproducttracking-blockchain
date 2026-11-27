@@ -164,9 +164,9 @@ describe('ConsumerTrackingPage', () => {
     render(<ConsumerTrackingPage batchId="PB-7K2M-9QXD" />);
     await screen.findByRole('list', { name: 'Recorded journey of batch PB-7K2M-9QXD' });
 
-    expect(screen.queryByText(/Choose a demonstration role/)).toBeNull();
+    expect(screen.queryByText(/Welcome Back/)).toBeNull();
     expect(screen.queryByText(/workspace/i)).toBeNull();
-    expect(screen.queryByText(/Exit session/)).toBeNull();
+    expect(screen.queryByText(/Sign out/)).toBeNull();
     expect(screen.queryByText(/Active role/)).toBeNull();
   });
 

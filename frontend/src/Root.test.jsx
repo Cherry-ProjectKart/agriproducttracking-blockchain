@@ -12,7 +12,7 @@ vi.mock('./services/accessService.js', async (importOriginal) => ({
     { key: 'farmer', label: 'Farmer', description: 'Register agricultural product batches.' },
   ]),
   fetchSession: vi.fn().mockResolvedValue({ active: false, role: null, role_label: null, display_name: null }),
-  startSession: vi.fn(),
+  signIn: vi.fn(),
   endSession: vi.fn(),
   fetchRoleActions: vi.fn(),
 }));
@@ -53,8 +53,8 @@ describe('Root: direct navigation to a QR tracking link', () => {
 
     expect(accessService.fetchSession).not.toHaveBeenCalled();
     expect(accessService.fetchRoles).not.toHaveBeenCalled();
-    expect(accessService.startSession).not.toHaveBeenCalled();
-    expect(screen.queryByText('Choose a demonstration role')).toBeNull();
+    expect(accessService.signIn).not.toHaveBeenCalled();
+    expect(screen.queryByText('Welcome Back')).toBeNull();
     expect(screen.queryByText('Blockchain Product Tracking', { selector: 'h1' })).toBeNull();
   });
 });
@@ -72,7 +72,7 @@ describe('Root: the application address', () => {
   it('shows the application, not the tracking page, at the root address', async () => {
     render(<Root />);
 
-    expect(await screen.findByText('Choose a demonstration role')).toBeTruthy();
+    expect(await screen.findByText('Welcome Back')).toBeTruthy();
     expect(trackingService.fetchPublicTracking).not.toHaveBeenCalled();
     expect(accessService.fetchSession).toHaveBeenCalled();
   });

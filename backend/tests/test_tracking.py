@@ -9,6 +9,8 @@ from PIL import Image
 
 from app.services.batch_service import register_batch, validate_batch_input
 
+from tests.auth_helpers import sign_in
+
 FARMER_KEY = "aaaa1111-bbbb-4ccc-8ddd-000000000301"
 VALID_BATCH = {
     "product_name": "Basmati Rice",
@@ -23,7 +25,7 @@ PUBLIC_EVENT_KEYS = {"event_type", "label", "actor_role", "status", "note", "tim
 
 
 def _role(client, role):
-    assert client.post("/api/session", json={"role": role}).status_code == 201
+    assert sign_in(client, role).status_code == 200
 
 
 def _connect(db_path):
@@ -290,7 +292,7 @@ def test_decoded_url_uses_the_configured_tracking_base(db_path):
     init_db(db_path)
     app = create_app({"TESTING": True, "DATABASE_PATH": db_path, "SECRET_KEY": "t", "TRACKING_BASE_URL": "http://192.168.1.20:5173"})
     client = app.test_client()
-    client.post("/api/session", json={"role": "farmer"})
+    sign_in(client, "farmer")
     batch_id = client.post("/api/batches", json=VALID_BATCH, headers={"Idempotency-Key": "eeee5555-ffff-4000-8111-000000000301"}).get_json()["batch"]["batch_id"]
     qr_path = client.get(f"/api/batches/by-batch-id/{batch_id}").get_json()["batch"]["qr_code_url"]
 

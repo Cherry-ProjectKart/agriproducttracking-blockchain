@@ -15,6 +15,8 @@ from app import create_app
 from app.config import build_config
 from app.services.qr_service import build_tracking_url, render_qr_png
 
+from tests.auth_helpers import sign_in
+
 KEY = "77777777-aaaa-4bbb-8ccc-000000000001"
 VALID = {
     "product_name": "Basmati Rice",
@@ -34,7 +36,7 @@ def decode_qr(png_bytes):
 
 
 def _as_farmer(client):
-    assert client.post("/api/session", json={"role": "farmer"}).status_code == 201
+    assert sign_in(client, "farmer").status_code == 200
 
 
 def _register(client, key=KEY, **changes):
@@ -250,7 +252,7 @@ def test_another_farmers_qr_is_not_found(client, db_path):
 def test_other_roles_cannot_get_qr_codes(client, role):
     _as_farmer(client)
     batch = _register(client)
-    client.post("/api/session", json={"role": role})
+    sign_in(client, role)
 
     assert client.get(batch["qr_code_url"]).status_code == 403
 
@@ -302,7 +304,7 @@ def test_lookup_with_unknown_batch_id_is_not_found(client):
 def test_lookup_by_batch_id_is_farmer_only(client):
     _as_farmer(client)
     batch = _register(client)
-    client.post("/api/session", json={"role": "distributor"})
+    sign_in(client, "distributor")
 
     assert client.get(f"/api/batches/by-batch-id/{batch['batch_id']}").status_code == 403
     client.delete("/api/session")

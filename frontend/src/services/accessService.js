@@ -1,6 +1,6 @@
 /**
- * Demo role-access API calls. The backend is the authority for roles and sessions;
- * SUPPORTED_ROLE_KEYS is a client-side guard so an unsupported value never leaves the browser.
+ * Sign-in, sign-out and session calls. The backend is the authority for sessions and roles.
+ * The role is never sent by the browser: it is read from the signed-in account.
  */
 
 import { getJson, sendJson } from './apiClient.js';
@@ -17,22 +17,22 @@ export async function fetchRoles({ signal } = {}) {
   return body.roles;
 }
 
-/** Resolves with { active, role, role_label, display_name } for the current browser session. */
+/** Resolves with { active, role, role_label, display_name, username } for the current browser session. */
 export function fetchSession({ signal } = {}) {
   return getJson('/api/session', { signal });
 }
 
-/** Selects a role and starts a demo session. Resolves with the new session state. */
-export function startSession(role, { signal } = {}) {
-  return sendJson('POST', '/api/session', { body: { role }, signal });
+/** Signs in with { username, password }. Resolves with the signed-in session state. */
+export function signIn({ username, password }, { signal } = {}) {
+  return sendJson('POST', '/api/session', { body: { username, password }, signal });
 }
 
-/** Exits the current demo session. Resolves with the inactive session state. */
+/** Signs out. Resolves with the signed-out session state. Idempotent. */
 export function endSession({ signal } = {}) {
   return sendJson('DELETE', '/api/session', { signal });
 }
 
-/** Resolves with { role, role_label, actions } for the active role. Rejects with 401 when signed out. */
+/** Resolves with { role, role_label, actions } for the signed-in role. Rejects with 401 when signed out. */
 export function fetchRoleActions({ signal } = {}) {
   return getJson('/api/role-actions', { signal });
 }

@@ -1012,3 +1012,178 @@ body {
     font-size: 1.4rem;
   }
 }
+
+/* ---- Account registration and sign-in (BPT-101) ---- */
+
+.auth-page {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: 1fr;
+  align-items: start;
+}
+
+.auth-intro,
+.auth-card,
+.auth-status {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.5rem;
+}
+
+.auth-intro {
+  border-top: 4px solid var(--color-primary);
+}
+
+.auth-intro__title {
+  margin: 0 0 0.5rem;
+  font-size: 1.6rem;
+  color: var(--color-primary-dark);
+}
+
+.auth-intro__text {
+  margin: 0 0 1rem;
+  color: var(--color-muted);
+}
+
+.auth-intro__roles {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--color-text);
+}
+
+.auth-intro__roles li + li {
+  margin-top: 0.4rem;
+}
+
+.auth-card__title {
+  margin: 0;
+  font-size: 1.5rem;
+  color: var(--color-primary-dark);
+}
+
+.auth-card__subtitle {
+  margin: 0.25rem 0 1.25rem;
+  color: var(--color-muted);
+}
+
+.auth-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.auth-switch {
+  margin: 0.5rem 0 0;
+  text-align: center;
+  color: var(--color-muted);
+}
+
+.auth-switch a {
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+
+.form-hint {
+  margin: 0.25rem 0 0;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+.form-field--password .password-input {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.form-field--password .password-input input {
+  flex: 1;
+  min-width: 0;
+}
+
+.password-input__toggle {
+  min-width: 4.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-primary-dark);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0 0.75rem;
+}
+
+.password-input__toggle:hover:not(:disabled) {
+  background: #e9f2ec;
+}
+
+.password-input__toggle:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.password-input__toggle:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.role-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.role-fieldset legend {
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  padding: 0;
+}
+
+.role-option {
+  position: relative;
+  cursor: pointer;
+}
+
+.role-option__input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+}
+
+.role-option:focus-within {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.role-option--selected {
+  border-color: var(--color-primary);
+  background: #e9f2ec;
+  box-shadow: inset 0 0 0 1px var(--color-primary);
+}
+
+.auth-status {
+  padding: 1.25rem 1.5rem;
+}
+
+@media (min-width: 900px) {
+  .auth-page {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .auth-status {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 600px) {
+  .auth-intro,
+  .auth-card {
+    padding: 1.1rem;
+  }
+
+  .form-field--password .password-input {
+    flex-wrap: nowrap;
+  }
+}

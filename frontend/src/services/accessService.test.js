@@ -4,7 +4,7 @@ import {
   endSession,
   fetchRoleActions,
   isSupportedRole,
-  startSession,
+  signIn,
 } from './accessService.js';
 
 function jsonResponse(status, body) {
@@ -37,18 +37,27 @@ describe('access API calls', () => {
     vi.unstubAllGlobals();
   });
 
-  it('startSession posts the selected role as JSON to /api/session', async () => {
-    const payload = { active: true, role: 'farmer', role_label: 'Farmer', display_name: 'Demo Farmer' };
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(201, payload));
+  it('signIn posts the username and password as JSON to /api/session and never a role', async () => {
+    const payload = { active: true, role: 'farmer', role_label: 'Farmer', display_name: 'Demo Farmer', username: 'demo.farmer' };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, payload));
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(startSession('farmer')).resolves.toEqual(payload);
+    await expect(signIn({ username: 'demo.farmer', password: 'FarmerDemo2026' })).resolves.toEqual(payload);
 
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('/api/session');
     expect(init.method).toBe('POST');
     expect(init.headers['Content-Type']).toBe('application/json');
-    expect(JSON.parse(init.body)).toEqual({ role: 'farmer' });
+    expect(JSON.parse(init.body)).toEqual({ username: 'demo.farmer', password: 'FarmerDemo2026' });
+  });
+
+  it('signIn rejects with the server status so the form can show the generic message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(401, { error: { message: 'Username or password is incorrect.' } })));
+
+    await expect(signIn({ username: 'x', password: 'y' })).rejects.toMatchObject({
+      status: 401,
+      body: { error: { message: 'Username or password is incorrect.' } },
+    });
   });
 
   it('endSession sends DELETE to /api/session', async () => {

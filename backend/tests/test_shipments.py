@@ -3,11 +3,14 @@
 import hashlib
 import json
 import sqlite3
+import time
 
 import pytest
 
 from app.db import init_db
 from app.services import shipment_service
+
+from tests.auth_helpers import sign_in
 
 FARMER_KEY = "aaaa1111-bbbb-4ccc-8ddd-000000000001"
 VALID_BATCH = {
@@ -48,7 +51,7 @@ def _count(db_path, sql, params=()):
 
 
 def _role(client, role):
-    assert client.post("/api/session", json={"role": role}).status_code == 201
+    assert sign_in(client, role).status_code == 200
 
 
 def _register_batch(client, key=FARMER_KEY):
@@ -301,7 +304,7 @@ def test_unauthenticated_requests_are_rejected(client):
 def test_session_for_a_missing_distributor_is_rejected(client, db_path):
     batch_id = _register_batch(client)
     with client.session_transaction() as session:
-        session["demo_access"] = {"role": "distributor", "user_id": 9999, "display_name": "Ghost"}
+        session["account_session"] = {"user_id": 9999, "issued_at": int(time.time())}
 
     response = _ship(client, batch_id)
 

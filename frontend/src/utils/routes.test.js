@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { trackingBatchIdFromPath } from './routes.js';
+import { authPageFromPath, trackingBatchIdFromPath } from './routes.js';
+
+describe('authPageFromPath', () => {
+  it('shows registration only for /register', () => {
+    expect(authPageFromPath('/register')).toBe('register');
+  });
+
+  it.each(['/', '/sign-in', '/anything-else', undefined])('shows sign-in for %s', (path) => {
+    expect(authPageFromPath(path)).toBe('sign-in');
+  });
+});
 
 describe('trackingBatchIdFromPath', () => {
   it('extracts the batch ID from a QR tracking path', () => {

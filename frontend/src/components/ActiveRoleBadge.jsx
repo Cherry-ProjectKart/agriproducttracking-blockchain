@@ -1,7 +1,12 @@
-export default function ActiveRoleBadge({ label }) {
+export default function ActiveRoleBadge({ label, name = null }) {
   return (
     <p className="role-badge" data-testid="active-role">
-      Active role: <strong>{label}</strong>
+      {name ? (
+        <>
+          Signed in as <strong>{name}</strong> ·{' '}
+        </>
+      ) : null}
+      Role: <strong>{label}</strong>
     </p>
   );
 }

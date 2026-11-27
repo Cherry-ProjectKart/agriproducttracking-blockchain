@@ -1,6 +1,7 @@
 """SQLite connection management and schema initialisation."""
 
 import sqlite3
+from collections.abc import Mapping
 from pathlib import Path
 
 from flask import Flask, current_app, g
@@ -10,6 +11,7 @@ from app.migrations import (
     complete_product_batches_upgrade,
     ensure_event_request_key,
     ensure_ledger_event_reference,
+    ensure_user_account_columns,
     retire_outdated_product_batches,
 )
 from app.services.ledger_service import backfill_registration_ledger, ensure_genesis
@@ -42,10 +44,11 @@ def close_db(_error: BaseException | None = None) -> None:
         db.close()
 
 
-def init_db(database_path: str) -> list[str]:
+def init_db(database_path: str, demo_passwords: Mapping[str, str] | None = None) -> list[str]:
     """Create the database file (if needed), upgrade older tables, apply the schema and seed demo accounts.
 
-    Returns the table names. Safe to run repeatedly; existing rows are preserved.
+    demo_passwords maps role -> configured demo password. None reads the DEMO_*_PASSWORD environment variables.
+    Returns the table names. Safe to run repeatedly; existing rows and passwords are preserved.
     """
     Path(database_path).parent.mkdir(parents=True, exist_ok=True)
     schema = SCHEMA_PATH.read_text(encoding="utf-8")
@@ -60,7 +63,8 @@ def init_db(database_path: str) -> list[str]:
         ensure_genesis(conn)
         conn.commit()
         backfill_registration_ledger(conn)
-        seed_demo_users(conn)
+        ensure_user_account_columns(conn)
+        seed_demo_users(conn, demo_passwords)
         conn.commit()
     finally:
         conn.close()

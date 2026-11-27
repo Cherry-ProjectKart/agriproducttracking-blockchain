@@ -2,7 +2,7 @@
 
 A blockchain-enabled system for tracing agricultural products from farm to retail. Every supply-chain event is recorded in a tamper-evident ledger so that a product's journey can be verified by farmers, distributors, retailers and consumers.
 
-> **Status:** consumer QR tracking (BPT-009, US-08) on top of batch history and ledger integrity verification (BPT-008, US-07), retailer receipt confirmation (BPT-007, US-06), distributor shipment updates (BPT-006, US-05), the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001).
+> **Status:** account registration and sign-in (BPT-101), replacing the earlier role selector; consumer QR tracking (BPT-009, US-08) on top of batch history and ledger integrity verification (BPT-008, US-07), retailer receipt confirmation (BPT-007, US-06), distributor shipment updates (BPT-006, US-05), the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001).
 
 ## Technology stack
 
@@ -117,49 +117,51 @@ Health endpoint: `GET http://127.0.0.1:5000/api/health`
 - `200` with `"status": "ok"` when the API is running and the database schema is present.
 - `503` with `"status": "degraded"` when the database file or schema is missing (run `init_db.py`).
 
-## Demo role access
+## Accounts, sign-in and demo access (BPT-101)
 
-This is the basic access for the academic demonstration (user story US-01). It is **not** production authentication.
+Each person who takes part in the supply chain registers an account with one role: **Farmer**, **Distributor** or **Retailer**. Consumers do not need an account; they open the public tracking page from a QR code.
 
-### Supported demo roles
+### Registration and sign-in
 
-| Role | Sample account | What the role's workspace lists |
-|---|---|---|
-| Farmer | `demo.farmer` (Demo Farmer) | Register product batch |
-| Distributor | `demo.distributor` (Demo Distributor) | Record shipment update |
-| Retailer | `demo.retailer` (Demo Retailer) | Confirm receipt of batch |
+1. Open the application. The sign-in page is shown when nobody is signed in.
+2. Select **Create an account**. Enter your full name, a username, a password (twice) and choose a role.
+3. Passwords must be 8 to 128 characters and include a letter and a number. Usernames are 3 to 32 characters: letters, numbers, dots, underscores or hyphens, starting with a letter or number. Usernames are not case-sensitive and are stored in lower case, so `Asha.Farmer` and `asha.farmer` are the same account.
+4. On success the account is signed in and its role workspace opens.
+5. To sign in later, use **Sign In** with your username and password. The role comes from your account; it cannot be chosen on the sign-in page.
+6. **Sign out** ends the session. The account and its records are kept.
 
-The sample accounts are created in the existing `users` table by `python scripts/init_db.py`. They have no passwords. The listed actions are placeholders: they show as "Not available yet" until their stories are built.
+A signed-in session survives a page refresh. It lasts `SESSION_LIFETIME_HOURS` (12 hours by default) and then asks you to sign in again.
 
-### How it works
+### Demo accounts for the college demonstration
 
-1. Open the app. If no session is active, choose Farmer, Distributor or Retailer.
-2. The backend validates the role, starts a session, and stores the role in a signed, HTTP-only cookie.
-3. The header shows the active role. The workspace shows that role's actions, fetched from `GET /api/role-actions`. The backend returns actions only for the role held by the session.
-4. Select **Exit session** to end the session. The app returns to the role-selection screen.
-5. Refreshing the page keeps the same role while the backend keeps running. Restarting the backend (with no `SECRET_KEY` set) ends all sessions.
+The database has three demo accounts: `demo.farmer`, `demo.distributor` and `demo.retailer`. Their passwords come from environment variables and are stored only as hashes.
 
-### Demo access API
+1. Copy `backend/.env.example` to `backend/.env` and set `DEMO_FARMER_PASSWORD`, `DEMO_DISTRIBUTOR_PASSWORD` and `DEMO_RETAILER_PASSWORD` (each at least 8 characters, with a letter and a number).
+2. Run `python scripts/init_db.py` from `backend/`. It creates the accounts and sets their passwords. It prints a warning for any demo account still without a password.
+3. Sign in on the sign-in page with the username (for example `demo.distributor`) and the password you set.
+
+Restarting the backend does not change a demo password that is already stored. To set a new one, clear the stored hash first (`UPDATE users SET password_hash = NULL WHERE username = 'demo.farmer';`) and run `init_db.py` again.
+
+### Account API
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| GET | `/api/roles` | none | Supported roles with labels and descriptions |
-| GET | `/api/session` | none | Current session: `active`, `role`, `role_label`, `display_name` |
-| POST | `/api/session` | none | Body `{"role": "farmer"}`. Starts a session. `201` on success, `400` for a missing or unsupported role, `503` if sample accounts are missing |
-| DELETE | `/api/session` | none | Exits the session. Idempotent |
-| GET | `/api/role-actions` | active session | Actions for the session's role. `401` with no session |
+| POST | `/api/accounts` | none | Register `{full_name, username, password, confirm_password, role}`. `201` and signed in; `400` with field `details`; `409` when the username is taken |
+| POST | `/api/session` | none | Sign in `{username, password}`. `200` with the session; `400` for missing fields; `401` for wrong credentials (same message for an unknown username); `403` for a disabled account |
+| GET | `/api/session` | none | Current sign-in: `active`, `role`, `role_label`, `display_name`, `username` |
+| DELETE | `/api/session` | none | Sign out. Idempotent |
+| GET | `/api/roles` | none | The three operational roles |
+| GET | `/api/role-actions` | signed in | Actions for the signed-in role. `401` when signed out |
 
-Endpoints that require a role use the `require_role(...)` decorator in `backend/app/auth.py`. It returns `401` with no session and `403` when the session's role is not allowed.
+Responses never include a password or a password hash. Role checks (`require_role`) read the role from the database on every request.
 
-### Security limitations
+### Security notes
 
-- **No authentication.** Anyone who can reach the backend can select any role. There are no passwords, registration, email verification, password recovery or external identity provider.
-- **Role selection is a demonstration switch,** not an identity. The role is trusted for display and for the demo's role checks only.
-- **Localhost only.** The design assumes a single local user on a trusted machine. Do not expose the backend to a network.
-- **Cookie-based session.** The role is stored in a cookie signed with `SECRET_KEY`. Without `SECRET_KEY`, a random key is generated at each backend start. Set `SECRET_KEY` in `backend/.env` for stable sessions across restarts. Do not use the value from `.env.example` for anything real.
-- **Session cookies are not marked `Secure`** because localhost uses plain HTTP. Set `SESSION_COOKIE_SECURE=1` only when serving over HTTPS.
-- **No CSRF token.** `SameSite=Lax` limits cross-site requests, but a same-site page could still switch roles. The impact is limited to this demo.
-- **Sessions are browser-session cookies** with no idle timeout.
+- Passwords are hashed with Werkzeug's salted scrypt (`generate_password_hash`). No new dependency was added.
+- The session cookie is signed with `SECRET_KEY`, `HttpOnly` and `SameSite=Lax`. It stores only the account id and the time of sign-in.
+- Sign-in does not reveal whether a username exists, and it spends similar time on unknown usernames.
+- Set `SECRET_KEY` in `backend/.env` for sessions that survive a backend restart. Without it a random key is used, so sessions end when the backend restarts.
+- Limitations: no rate limit on sign-in, no CSRF token, no password reset, no email address, and cookies are not `Secure` on localhost (set `SESSION_COOKIE_SECURE=1` only over HTTPS).
 
 ## Product batch registration (US-02)
 
@@ -691,8 +693,9 @@ npm run build
 |---|---|---|
 | GET | `/api/health` | API status, application name and database status |
 | GET | `/api/roles` | Supported demo roles |
-| GET / POST / DELETE | `/api/session` | Read, start or exit the demo role session |
-| GET | `/api/role-actions` | Role-specific actions for the active session role |
+| GET / POST / DELETE | `/api/session` | Read the sign-in state, sign in with username and password, or sign out |
+| POST | `/api/accounts` | Register an account (Farmer, Distributor or Retailer) and sign it in |
+| GET | `/api/role-actions` | Role-specific actions for the signed-in role |
 | POST | `/api/batches` | Farmer registers a product batch (requires `Idempotency-Key`); response includes `batch_id`, `tracking_url`, `qr_code_url` |
 | GET | `/api/batches/by-batch-id/<batch ID>` | Farmer looks up one of their batches by its batch ID |
 | GET | `/api/batches/<id>/qr.png` | Farmer's QR code image (`?download=1` to download) |
@@ -718,7 +721,9 @@ Errors under `/api/*` are returned as JSON: `{"error": {"code", "name", "message
 | `APP_NAME` | backend | `Blockchain Product Tracking` | Name returned by the health endpoint |
 | `DATABASE_PATH` | backend | `instance/product_tracking.db` | SQLite file (relative to `backend/`) |
 | `CORS_ORIGINS` | backend | `http://localhost:5173,http://127.0.0.1:5173` | Origins allowed to call `/api/*` |
-| `SECRET_KEY` | backend | random per start | Signs the demo session cookie (see Security limitations) |
+| `SECRET_KEY` | backend | random per start | Signs the session cookie (see Security notes) |
+| `SESSION_LIFETIME_HOURS` | backend | `12` | How long a sign-in lasts (0.1 to 168 hours) |
+| `DEMO_FARMER_PASSWORD`, `DEMO_DISTRIBUTOR_PASSWORD`, `DEMO_RETAILER_PASSWORD` | backend | empty | Passwords for the demo accounts, read by `scripts/init_db.py` |
 | `SESSION_COOKIE_SECURE` | backend | `0` | Set `1` only when serving over HTTPS |
 | `TRACKING_BASE_URL` | backend | `http://localhost:5173` | Base of the tracking URL encoded in QR codes. Use the LAN address to scan from another device |
 | `FLASK_HOST` / `FLASK_PORT` | backend | `127.0.0.1` / `5000` | Development server address |
@@ -729,7 +734,7 @@ Never commit real `.env` files, virtual environments, `node_modules`, SQLite dat
 
 ## Known limitations
 
-- Demo role access has no authentication; see [Security limitations](#security-limitations) under Demo role access.
+- Sign-in has no rate limit, CSRF token or password reset; see Security notes under Accounts, sign-in and demo access.
 - No user management, consumer accounts or cloud deployment.
 - The ledger is a local, single-application hash chain. See Local ledger for what it does and does not prove.
 - SQLite is single-writer; this is acceptable for the local prototype but not for multi-user production load.
