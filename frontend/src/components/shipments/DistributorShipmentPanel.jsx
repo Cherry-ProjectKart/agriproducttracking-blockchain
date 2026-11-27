@@ -3,6 +3,7 @@ import { createSubmissionKey } from '../../services/batchService.js';
 import { ApiError } from '../../services/apiClient.js';
 import { createShipment, fetchShipmentBatches } from '../../services/shipmentService.js';
 import { formatQuantity, formatTimestamp } from '../batches/batchFormatters.js';
+import WorkspaceSummary from '../WorkspaceSummary.jsx';
 import {
   EMPTY_SHIPMENT_FORM,
   NOTE_MAX_LENGTH,
@@ -124,6 +125,20 @@ export default function DistributorShipmentPanel() {
         ) : null}
         {list.status === 'ready' && list.batches.length === 0 ? (
           <p className="batch-list__empty">No registered batches are available for shipment updates yet.</p>
+        ) : null}
+        {list.status === 'ready' && list.batches.length > 0 ? (
+          <WorkspaceSummary
+            label="Shipment summary"
+            items={[
+              { label: 'Batches available', value: list.batches.length },
+              { label: 'Shipped', value: list.batches.filter((b) => b.current_status === 'Shipped').length },
+              { label: 'In transit', value: list.batches.filter((b) => b.current_status === 'In Transit').length },
+              {
+                label: 'Delivered to retailer',
+                value: list.batches.filter((b) => b.current_status === 'Delivered to Retailer').length,
+              },
+            ]}
+          />
         ) : null}
         {list.status === 'ready' && list.batches.length > 0 ? (
           <fieldset className="shipment-select" aria-describedby={errors.batchId ? 'shipment-batchId-error' : undefined}>

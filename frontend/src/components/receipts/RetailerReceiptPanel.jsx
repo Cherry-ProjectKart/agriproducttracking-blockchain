@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import WorkspaceSummary from '../WorkspaceSummary.jsx';
 import { ApiError } from '../../services/apiClient.js';
 import { createSubmissionKey } from '../../services/batchService.js';
 import { confirmReceipt, fetchAwaitingReceipts } from '../../services/receiptService.js';
@@ -89,6 +90,12 @@ export default function RetailerReceiptPanel() {
         ) : null}
         {list.status === 'ready' && list.batches.length === 0 ? (
           <p className="batch-list__empty">No batches are awaiting receipt right now.</p>
+        ) : null}
+        {list.status === 'ready' && list.batches.length > 0 ? (
+          <WorkspaceSummary
+            label="Receipt summary"
+            items={[{ label: 'Awaiting receipt', value: list.batches.length }]}
+          />
         ) : null}
         {list.status === 'ready' && list.batches.length > 0 ? (
           <fieldset className="shipment-select" aria-describedby={selectionError ? 'receipt-selection-error' : undefined}>

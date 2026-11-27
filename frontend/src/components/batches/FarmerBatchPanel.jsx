@@ -3,6 +3,8 @@ import { fetchBatches } from '../../services/batchService.js';
 import BatchDetails from './BatchDetails.jsx';
 import BatchList from './BatchList.jsx';
 import BatchRegistrationForm from './BatchRegistrationForm.jsx';
+import WorkspaceSummary from '../WorkspaceSummary.jsx';
+import { formatTimestamp } from './batchFormatters.js';
 
 const LIST_ERROR = 'Could not load your batches. Make sure the backend is running.';
 
@@ -67,6 +69,18 @@ export default function FarmerBatchPanel() {
           <div className="alert alert--danger" role="alert">
             {LIST_ERROR}
           </div>
+        ) : null}
+        {list.status === 'ready' ? (
+          <WorkspaceSummary
+            label="Batch summary"
+            items={[
+              { label: 'Registered batches', value: list.batches.length },
+              {
+                label: 'Latest registration',
+                value: list.batches.length > 0 ? formatTimestamp(list.batches[0].created_at) : 'None yet',
+              },
+            ]}
+          />
         ) : null}
         {list.status === 'ready' ? (
           <BatchList

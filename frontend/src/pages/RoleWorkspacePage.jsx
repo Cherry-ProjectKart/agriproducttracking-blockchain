@@ -9,6 +9,12 @@ import { fetchRoleActions } from '../services/accessService.js';
 import { navigationForRole } from '../utils/roleNavigation.js';
 
 const LOAD_ERROR = 'Could not load the actions for this role. Make sure the backend is running.';
+const DEFAULT_SECTION = '#workspace-top';
+
+/** The section link the address points at. Navigation links are in-page anchors, so the hash is the state. */
+function currentSectionHash() {
+  return window.location.hash || DEFAULT_SECTION;
+}
 
 /**
  * Role-specific landing view. The action list comes from the backend, which checks the
@@ -17,6 +23,14 @@ const LOAD_ERROR = 'Could not load the actions for this role. Make sure the back
  */
 export default function RoleWorkspacePage({ role, roleLabel, roleDescription }) {
   const [state, setState] = useState({ status: 'loading', actions: [], error: null });
+
+  const [activeSection, setActiveSection] = useState(currentSectionHash);
+
+  useEffect(() => {
+    const onHashChange = () => setActiveSection(currentSectionHash());
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -44,7 +58,12 @@ export default function RoleWorkspacePage({ role, roleLabel, roleDescription }) 
         <ul className="role-nav__list">
           {navigationForRole(role).map((item) => (
             <li key={item.href}>
-              <a className="role-nav__link" href={item.href}>
+              <a
+                className={`role-nav__link${activeSection === item.href ? ' role-nav__link--active' : ''}`}
+                href={item.href}
+                aria-current={activeSection === item.href ? 'location' : undefined}
+                onClick={() => setActiveSection(item.href)}
+              >
                 {item.label}
               </a>
             </li>

@@ -144,6 +144,10 @@ Restarting the backend does not change a demo password that is already stored. T
 
 Who may use which workspace and endpoint is documented in [docs/security/ROLE_AUTHORIZATION_MATRIX.md](docs/security/ROLE_AUTHORIZATION_MATRIX.md) (BPT-102).
 
+### Role workspaces (BPT-103)
+
+Each role has its own address: `/farmer`, `/distributor` and `/retailer`. Signed-in users are sent to their own workspace, and every workspace has section links at the top; the link for the current section is highlighted. Summary figures are counted from the batches the workspace has already loaded from the API. Tables scroll inside their own card on narrow screens, and their header row stays visible. Consumers use the public tracking page at `/track/<batch ID>` and need no account.
+
 ### Account API
 
 | Method | Path | Auth | Description |
