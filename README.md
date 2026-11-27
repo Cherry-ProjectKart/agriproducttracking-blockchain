@@ -2,7 +2,7 @@
 
 A blockchain-enabled system for tracing agricultural products from farm to retail. Every supply-chain event is recorded in a tamper-evident ledger so that a product's journey can be verified by farmers, distributors, retailers and consumers.
 
-> **Status:** account registration and sign-in (BPT-101), replacing the earlier role selector; consumer QR tracking (BPT-009, US-08) on top of batch history and ledger integrity verification (BPT-008, US-07), retailer receipt confirmation (BPT-007, US-06), distributor shipment updates (BPT-006, US-05), the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001).
+> **Status:** strict role isolation and protected workspaces (BPT-102); account registration and sign-in (BPT-101), replacing the earlier role selector; consumer QR tracking (BPT-009, US-08) on top of batch history and ledger integrity verification (BPT-008, US-07), retailer receipt confirmation (BPT-007, US-06), distributor shipment updates (BPT-006, US-05), the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001).
 
 ## Technology stack
 
@@ -141,6 +141,8 @@ The database has three demo accounts: `demo.farmer`, `demo.distributor` and `dem
 3. Sign in on the sign-in page with the username (for example `demo.distributor`) and the password you set.
 
 Restarting the backend does not change a demo password that is already stored. To set a new one, clear the stored hash first (`UPDATE users SET password_hash = NULL WHERE username = 'demo.farmer';`) and run `init_db.py` again.
+
+Who may use which workspace and endpoint is documented in [docs/security/ROLE_AUTHORIZATION_MATRIX.md](docs/security/ROLE_AUTHORIZATION_MATRIX.md) (BPT-102).
 
 ### Account API
 

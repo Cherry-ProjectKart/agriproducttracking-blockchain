@@ -1187,3 +1187,40 @@ body {
     flex-wrap: nowrap;
   }
 }
+
+/* ---- Role-specific workspace navigation (BPT-102) ---- */
+
+.role-nav {
+  margin: 0 0 1.25rem;
+}
+
+.role-nav__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.role-nav__link {
+  display: inline-block;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-primary-dark);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.role-nav__link:hover {
+  background: #e9f2ec;
+}
+
+.role-nav__link:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
+}
+

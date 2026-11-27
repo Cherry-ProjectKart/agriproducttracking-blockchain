@@ -18,6 +18,23 @@ export const PATHS = Object.freeze({
   register: '/register',
 });
 
+/** Address of each role's workspace. Only a signed-in account with that role may show it. */
+export const WORKSPACE_PATHS = Object.freeze({
+  farmer: '/farmer',
+  distributor: '/distributor',
+  retailer: '/retailer',
+});
+
+/** The workspace address for a signed-in role, or the home address for an unknown role. */
+export function workspacePathForRole(role) {
+  return Object.hasOwn(WORKSPACE_PATHS, role) ? WORKSPACE_PATHS[role] : PATHS.home;
+}
+
+/** True when the address is a protected workspace address (any role). */
+export function isWorkspacePath(pathname) {
+  return Object.values(WORKSPACE_PATHS).includes(pathname);
+}
+
 /**
  * Which signed-out page an address shows: 'register' for /register, otherwise 'sign-in'.
  * Only used when no session is active; signed-in users always see their workspace.

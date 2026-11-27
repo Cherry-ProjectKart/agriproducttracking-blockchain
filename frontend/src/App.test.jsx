@@ -242,7 +242,7 @@ describe('App registration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create Account' }));
 
     expect(await screen.findByRole('heading', { name: 'Retailer workspace' })).toBeTruthy();
-    await waitFor(() => expect(window.location.pathname).toBe('/'));
+    await waitFor(() => expect(window.location.pathname).toBe('/retailer'));
     expect(accountService.registerAccount).toHaveBeenCalledTimes(1);
   });
 
