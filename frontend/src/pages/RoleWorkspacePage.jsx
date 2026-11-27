@@ -6,6 +6,7 @@ import LedgerView from '../components/ledger/LedgerView.jsx';
 import BatchHistoryPanel from '../components/history/BatchHistoryPanel.jsx';
 import LedgerVerificationPanel from '../components/history/LedgerVerificationPanel.jsx';
 import { fetchRoleActions } from '../services/accessService.js';
+import { navigationForRole } from '../utils/roleNavigation.js';
 
 const LOAD_ERROR = 'Could not load the actions for this role. Make sure the backend is running.';
 
@@ -34,15 +35,28 @@ export default function RoleWorkspacePage({ role, roleLabel, roleDescription }) 
   }, [roleLabel]);
 
   return (
-    <section className="workspace" aria-labelledby="workspace-heading">
+    <section className="workspace" id="workspace-top" aria-labelledby="workspace-heading">
       <h1 id="workspace-heading" className="dashboard__heading">
         {roleLabel} workspace
       </h1>
       {roleDescription ? <p className="dashboard__description">{roleDescription}</p> : null}
+      <nav className="role-nav" aria-label={`${roleLabel} workspace sections`}>
+        <ul className="role-nav__list">
+          {navigationForRole(role).map((item) => (
+            <li key={item.href}>
+              <a className="role-nav__link" href={item.href}>
+                {item.label}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </nav>
 
-      {role === 'farmer' ? <FarmerBatchPanel /> : null}
-      {role === 'distributor' ? <DistributorShipmentPanel /> : null}
-      {role === 'retailer' ? <RetailerReceiptPanel /> : null}
+      <div id="role-panel">
+        {role === 'farmer' ? <FarmerBatchPanel /> : null}
+        {role === 'distributor' ? <DistributorShipmentPanel /> : null}
+        {role === 'retailer' ? <RetailerReceiptPanel /> : null}
+      </div>
 
       <h2 className="dashboard__section-heading">Available actions</h2>
       {state.status === 'loading' ? <p role="status">Loading actions…</p> : null}
@@ -67,9 +81,13 @@ export default function RoleWorkspacePage({ role, roleLabel, roleDescription }) 
         </ul>
       ) : null}
 
-      <BatchHistoryPanel />
+      <div id="batch-history">
+        <BatchHistoryPanel />
+      </div>
       <LedgerVerificationPanel />
-      <LedgerView />
+      <div id="ledger">
+        <LedgerView />
+      </div>
     </section>
   );
 }

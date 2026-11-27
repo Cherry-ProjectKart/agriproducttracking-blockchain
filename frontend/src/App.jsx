@@ -5,7 +5,7 @@ import useAccountSession from './hooks/useAccountSession.js';
 import RegisterPage from './pages/RegisterPage.jsx';
 import RoleWorkspacePage from './pages/RoleWorkspacePage.jsx';
 import SignInPage from './pages/SignInPage.jsx';
-import { authPageFromPath, PATHS } from './utils/routes.js';
+import { authPageFromPath, isWorkspacePath, PATHS, workspacePathForRole } from './utils/routes.js';
 
 export default function App() {
   const account = useAccountSession();
@@ -30,10 +30,20 @@ export default function App() {
   const activeRole = session.active ? session : null;
   const activeRoleDetails = activeRole ? roles.find((role) => role.key === activeRole.role) : null;
 
-  // Signed in: the address returns to the home path, so a refresh or a later sign-out lands correctly.
+  const activeRoleKey = activeRole ? activeRole.role : null;
+  const expectedPath = activeRoleKey ? workspacePathForRole(activeRoleKey) : null;
+
+  // Route guard. A signed-in user is always moved to their own workspace address, whatever address they
+  // typed or came back to. A signed-out visitor is moved off any workspace address to sign-in. The
+  // server is still the authority: these redirects only keep the address consistent with the session.
   useEffect(() => {
-    if (activeRole && path !== PATHS.home) navigate(PATHS.home, { replace: true });
-  }, [activeRole, path, navigate]);
+    if (status !== 'ready') return;
+    if (activeRoleKey) {
+      if (path !== expectedPath) navigate(expectedPath, { replace: true });
+    } else if (isWorkspacePath(path)) {
+      navigate(PATHS.signIn, { replace: true });
+    }
+  }, [status, activeRoleKey, expectedPath, path, navigate]);
 
   async function handleSignOut() {
     const signedOut = await signOut();
