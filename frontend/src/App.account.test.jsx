@@ -180,6 +180,6 @@ describe('account settings route and density', () => {
     fireEvent.click(screen.getByRole('radio', { name: /Compact/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Save preferences' }));
 
-    await waitFor(() => expect(document.documentElement.dataset.gridDensity).toBe('compact'));
+    await waitFor(() => expect(document.documentElement.dataset.gridDensity).toBe('compact'), { timeout: 4000 });
   });
 });

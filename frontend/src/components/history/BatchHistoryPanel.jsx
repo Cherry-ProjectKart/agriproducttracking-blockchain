@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ApiError } from '../../services/apiClient.js';
 import { fetchBatchHistory } from '../../services/historyService.js';
 import { formatTimestamp } from '../batches/batchFormatters.js';
@@ -17,10 +17,21 @@ const KIND_CLASSES = {
  * Chronological history of one batch: registration, shipment and receipt events, each with its actor,
  * status, optional note, timestamp and the ledger block that records it. Available to every role.
  */
-export default function BatchHistoryPanel() {
+export default function BatchHistoryPanel({ request = null }) {
   const [batchId, setBatchId] = useState('');
   const [inputError, setInputError] = useState(null);
   const [state, setState] = useState({ status: 'idle', history: null, error: null, searchedId: '' });
+
+  // A "View history" action elsewhere in the workspace sends a batch ID here; look it up at once.
+  useEffect(() => {
+    if (!request) return;
+    const id = String(request.batchId).trim().toUpperCase();
+    setBatchId(id);
+    setInputError(null);
+    lookup(id);
+    // request.nonce makes each request distinct, even for the same batch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request]);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -31,6 +42,10 @@ export default function BatchHistoryPanel() {
       return;
     }
     setInputError(null);
+    lookup(trimmed);
+  }
+
+  async function lookup(trimmed) {
     setState({ status: 'loading', history: null, error: null, searchedId: trimmed });
     try {
       const history = await fetchBatchHistory(trimmed);

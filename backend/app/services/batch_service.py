@@ -18,6 +18,7 @@ from app.models.batch import (
     DESCRIPTION_MAX_LENGTH,
     ORIGIN_MAX_LENGTH,
     PRODUCT_NAME_MAX_LENGTH,
+    QUANTITY_MAX,
     REGISTERED_STATUS,
     REGISTRATION_EVENT_NOTE,
     REGISTRATION_EVENT_TYPE,
@@ -96,6 +97,9 @@ def _quantity(value: object, details: dict[str, str]) -> float | None:
         return None
     if not math.isfinite(number) or number <= 0:
         details["quantity"] = "Quantity must be greater than zero."
+        return None
+    if number > QUANTITY_MAX:
+        details["quantity"] = f"Quantity must be {QUANTITY_MAX:,.0f} or less."
         return None
     return number
 
@@ -291,3 +295,50 @@ def get_batch_by_batch_id(conn: sqlite3.Connection, farmer_id: int, batch_code: 
         (batch_code, farmer_id),
     ).fetchone()
     return _to_response(row) if row is not None else None
+
+
+# Fields that are recorded in the registration ledger event and so cannot change after registration (BPT-105).
+LEDGER_RECORDED_FIELDS = ("product_name", "quantity", "unit", "origin", "harvest_date")
+# The only field the farmer may change after registration. It is not part of any ledger event or
+# public tracking response, so changing it cannot rewrite tracking history.
+EDITABLE_BATCH_FIELDS = ("description",)
+LEDGER_FIELD_MESSAGE = (
+    "This detail is recorded on the ledger when the batch is registered, so it cannot be changed."
+)
+
+
+def update_batch_description(
+    conn: sqlite3.Connection, farmer_id: int, batch_id: int, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Change the description of one of this farmer's batches. Returns None when the batch is not theirs.
+
+    The batch ID, the QR code, the ledger, shipments, receipts and history are not touched: no event and no
+    block is added, and no existing record is rewritten. Every other field in the payload is rejected.
+    """
+    owned = conn.execute(
+        "SELECT id FROM product_batches WHERE id = ? AND created_by = ?", (batch_id, farmer_id)
+    ).fetchone()
+    if owned is None:
+        return None
+
+    details: dict[str, str] = {}
+    for key in payload:
+        if key in LEDGER_RECORDED_FIELDS:
+            details[key] = LEDGER_FIELD_MESSAGE
+        elif key not in EDITABLE_BATCH_FIELDS:
+            details[key] = "This field cannot be changed."
+    if "description" not in payload and not details:
+        details["description"] = "Enter a description, or leave it empty to remove it."
+    description = None
+    if "description" in payload and "description" not in details:
+        description = _optional_text(payload["description"], "description", "Description", DESCRIPTION_MAX_LENGTH, details)
+    if details:
+        raise BatchValidationError(details)
+
+    conn.execute(
+        "UPDATE product_batches SET description = ? WHERE id = ? AND created_by = ?",
+        (description, batch_id, farmer_id),
+    )
+    conn.commit()
+    return get_batch(conn, farmer_id, batch_id)
+

@@ -27,6 +27,7 @@ from app.services.batch_service import (
     get_batch_by_batch_id,
     list_batches,
     register_batch,
+    update_batch_description,
     validate_batch_input,
 )
 from app.services.qr_service import build_tracking_url, render_qr_png
@@ -115,6 +116,23 @@ def get_farmer_batch_by_batch_id(batch_code: str):
 @require_role("farmer")
 def get_farmer_batch(batch_id: int):
     batch = get_batch(get_db(), _active_farmer_id(), batch_id)
+    if batch is None:
+        raise ApiError(404, "Batch not found.")
+    return jsonify({"batch": _with_links(batch)}), 200
+
+
+@batches_bp.patch("/batches/<int:batch_id>")
+@require_role("farmer")
+def update_farmer_batch(batch_id: int):
+    """Change a batch description. Other batch details are recorded on the ledger and are refused."""
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        raise ApiError(400, "Request body must be a JSON object with the fields to change.")
+
+    try:
+        batch = update_batch_description(get_db(), _active_farmer_id(), batch_id, body)
+    except BatchValidationError as exc:
+        raise ApiError(400, "Please correct the highlighted fields.", exc.details) from exc
     if batch is None:
         raise ApiError(404, "Batch not found.")
     return jsonify({"batch": _with_links(batch)}), 200

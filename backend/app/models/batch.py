@@ -11,6 +11,8 @@ PRODUCT_NAME_MAX_LENGTH: Final[int] = 120
 DESCRIPTION_MAX_LENGTH: Final[int] = 500
 UNIT_MAX_LENGTH: Final[int] = 20
 ORIGIN_MAX_LENGTH: Final[int] = 200
+# Largest quantity a batch may record (BPT-105). A ceiling keeps values displayable and realistic.
+QUANTITY_MAX: Final[float] = 1_000_000_000
 
 # Status shown after registration. The SRS business rules name this state "Registered".
 REGISTERED_STATUS: Final[str] = "Registered"

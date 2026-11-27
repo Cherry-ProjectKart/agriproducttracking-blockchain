@@ -25,6 +25,14 @@ export default function RoleWorkspacePage({ role, roleLabel, roleDescription }) 
   const [state, setState] = useState({ status: 'loading', actions: [], error: null });
 
   const [activeSection, setActiveSection] = useState(currentSectionHash);
+  const [historyRequest, setHistoryRequest] = useState(null);
+
+  // Opens the batch history section for one batch, from the farmer's batch list.
+  function viewHistory(batch) {
+    setHistoryRequest({ batchId: batch.batch_id, nonce: Date.now() });
+    setActiveSection('#batch-history');
+    window.location.hash = 'batch-history';
+  }
 
   useEffect(() => {
     const onHashChange = () => setActiveSection(currentSectionHash());
@@ -72,7 +80,7 @@ export default function RoleWorkspacePage({ role, roleLabel, roleDescription }) 
       </nav>
 
       <div id="role-panel">
-        {role === 'farmer' ? <FarmerBatchPanel /> : null}
+        {role === 'farmer' ? <FarmerBatchPanel onViewHistory={viewHistory} /> : null}
         {role === 'distributor' ? <DistributorShipmentPanel /> : null}
         {role === 'retailer' ? <RetailerReceiptPanel /> : null}
       </div>
@@ -101,7 +109,7 @@ export default function RoleWorkspacePage({ role, roleLabel, roleDescription }) 
       ) : null}
 
       <div id="batch-history">
-        <BatchHistoryPanel />
+        <BatchHistoryPanel request={historyRequest} />
       </div>
       <LedgerVerificationPanel />
       <div id="ledger">

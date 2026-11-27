@@ -1,7 +1,7 @@
 import { formatQuantity, formatTimestamp } from './batchFormatters.js';
 
 /** The farmer's registered batches, newest first. Each row can be opened to show its QR code. */
-export default function BatchList({ batches, selectedId = null, onSelect }) {
+export default function BatchList({ batches, selectedId = null, onSelect, onViewHistory = null }) {
   if (batches.length === 0) {
     return <p className="batch-list__empty">No batches registered yet.</p>;
   }
@@ -37,6 +37,16 @@ export default function BatchList({ batches, selectedId = null, onSelect }) {
               <td>{batch.current_status}</td>
               <td>{formatTimestamp(batch.created_at)}</td>
               <td>
+                {onViewHistory ? (
+                  <button
+                    type="button"
+                    className="btn btn--secondary btn--small"
+                    aria-label={`View history for batch ${batch.batch_id}`}
+                    onClick={() => onViewHistory(batch)}
+                  >
+                    History
+                  </button>
+                ) : null}
                 {onSelect ? (
                   <button
                     type="button"

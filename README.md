@@ -2,7 +2,7 @@
 
 A blockchain-enabled system for tracing agricultural products from farm to retail. Every supply-chain event is recorded in a tamper-evident ledger so that a product's journey can be verified by farmers, distributors, retailers and consumers.
 
-> **Status:** user profile and account settings (BPT-104); role-specific workspaces and responsive grids (BPT-103); strict role isolation and protected workspaces (BPT-102); account registration and sign-in (BPT-101), replacing the earlier role selector; consumer QR tracking (BPT-009, US-08) on top of batch history and ledger integrity verification (BPT-008, US-07), retailer receipt confirmation (BPT-007, US-06), distributor shipment updates (BPT-006, US-05), the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001).
+> **Status:** Farmer batch registration and management (BPT-105); user profile and account settings (BPT-104); role-specific workspaces and responsive grids (BPT-103); strict role isolation and protected workspaces (BPT-102); account registration and sign-in (BPT-101), replacing the earlier role selector; consumer QR tracking (BPT-009, US-08) on top of batch history and ledger integrity verification (BPT-008, US-07), retailer receipt confirmation (BPT-007, US-06), distributor shipment updates (BPT-006, US-05), the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001).
 
 ## Technology stack
 
@@ -143,6 +143,18 @@ The database has three demo accounts: `demo.farmer`, `demo.distributor` and `dem
 Restarting the backend does not change a demo password that is already stored. To set a new one, clear the stored hash first (`UPDATE users SET password_hash = NULL WHERE username = 'demo.farmer';`) and run `init_db.py` again.
 
 Who may use which workspace and endpoint is documented in [docs/security/ROLE_AUTHORIZATION_MATRIX.md](docs/security/ROLE_AUTHORIZATION_MATRIX.md) (BPT-102).
+
+### Farmer batch registration and management (BPT-105)
+
+- **Registering:** the form asks for product name, description (optional), quantity, unit, origin or farm location, and harvest or registration date. The unit field suggests common units but accepts any short text. Quantity must be above zero and at most 1,000,000,000. Each submission has its own key, so a repeated submit returns the same batch rather than creating a second one.
+- **Your batches:** the list shows each batch ID, product, quantity, origin, harvest date, status and registration time. **View QR** shows the batch's QR code; **History** opens its registration, shipment and receipt history below.
+- **Editing:** after registration, only the **description** can be changed. The product name, quantity, unit, origin and harvest date are recorded on the ledger when the batch is registered, so they cannot be changed. Changing the description does not change the batch ID, QR code, tracking page, ledger, history, shipments or receipts, and it adds no ledger block.
+
+A farmer can read and edit only their own batches. Another farmer's batch returns "Batch not found", whether or not it exists.
+
+| Method | Path | Description |
+|---|---|---|
+| PATCH | `/api/batches/<id>` | Change `description` of one of your batches (`id` is the row id). Any other field is refused with 400 |
 
 ### Profile and account settings (BPT-104)
 
