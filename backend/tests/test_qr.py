@@ -329,3 +329,51 @@ def test_health_and_session_still_work_with_qr_support(client):
 
     assert client.get("/api/health").status_code == 200
     assert client.get("/api/session").get_json()["role"] == "farmer"
+
+
+def test_qr_download_is_a_valid_png_file(client):
+    _as_farmer(client)
+    batch = _register(client)
+
+    body = client.get(batch["qr_code_url"] + "?download=1").get_data()
+
+    assert body.startswith(PNG_SIGNATURE)
+    assert Image.open(io.BytesIO(body)).format == "PNG"
+
+
+def _table_counts(db_path):
+    conn = sqlite3.connect(db_path)
+    try:
+        return tuple(
+            conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            for table in ("product_batches", "supply_chain_events", "ledger_blocks")
+        )
+    finally:
+        conn.close()
+
+
+def test_repeated_qr_views_and_downloads_change_no_records(client, db_path):
+    _as_farmer(client)
+    batch = _register(client)
+    before = _table_counts(db_path)
+
+    for _ in range(3):
+        assert client.get(batch["qr_code_url"]).status_code == 200
+        assert client.get(batch["qr_code_url"] + "?download=1").status_code == 200
+    client.get("/api/batches")
+
+    assert _table_counts(db_path) == before
+
+
+def test_qr_and_tracking_url_are_the_same_in_a_new_session(client):
+    _as_farmer(client)
+    batch = _register(client)
+    client.delete("/api/session")
+
+    _as_farmer(client)
+    listed = client.get("/api/batches").get_json()["batches"][0]
+    png = client.get(listed["qr_code_url"]).get_data()
+
+    assert listed["batch_id"] == batch["batch_id"]
+    assert listed["tracking_url"] == batch["tracking_url"]
+    assert decode_qr(png) == [("QR Code", batch["tracking_url"])]
