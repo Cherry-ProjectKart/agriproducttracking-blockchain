@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS users (
     created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     password_hash TEXT,
     status        TEXT    NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
-    updated_at    TEXT
+    updated_at    TEXT,
+    grid_density  TEXT    NOT NULL DEFAULT 'comfortable' CHECK (grid_density IN ('comfortable', 'compact'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_role ON users (role);

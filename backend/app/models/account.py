@@ -27,3 +27,7 @@ DEMO_PASSWORD_ENV: Final[dict[str, str]] = {
     "distributor": "DEMO_DISTRIBUTOR_PASSWORD",
     "retailer": "DEMO_RETAILER_PASSWORD",
 }
+
+# Display density for data grids (BPT-104). Stored per account in users.grid_density.
+GRID_DENSITY_VALUES: Final[tuple[str, ...]] = ("comfortable", "compact")
+DEFAULT_GRID_DENSITY: Final[str] = "comfortable"

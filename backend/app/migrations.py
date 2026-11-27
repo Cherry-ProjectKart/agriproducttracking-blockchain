@@ -144,11 +144,12 @@ def backfill_batch_ids(conn: sqlite3.Connection) -> list[str]:
     return assigned
 
 
-# Columns added to users by BPT-101 (account registration and sign-in). Each is added only when missing.
+# Columns added to users by BPT-101 (accounts) and BPT-104 (grid_density preference). Each is added only when missing.
 _USER_ACCOUNT_COLUMNS = (
     ("password_hash", "TEXT"),
     ("status", "TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled'))"),
     ("updated_at", "TEXT"),
+    ("grid_density", "TEXT NOT NULL DEFAULT 'comfortable' CHECK (grid_density IN ('comfortable', 'compact'))"),
 )
 
 

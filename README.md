@@ -2,7 +2,7 @@
 
 A blockchain-enabled system for tracing agricultural products from farm to retail. Every supply-chain event is recorded in a tamper-evident ledger so that a product's journey can be verified by farmers, distributors, retailers and consumers.
 
-> **Status:** strict role isolation and protected workspaces (BPT-102); account registration and sign-in (BPT-101), replacing the earlier role selector; consumer QR tracking (BPT-009, US-08) on top of batch history and ledger integrity verification (BPT-008, US-07), retailer receipt confirmation (BPT-007, US-06), distributor shipment updates (BPT-006, US-05), the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001).
+> **Status:** user profile and account settings (BPT-104); role-specific workspaces and responsive grids (BPT-103); strict role isolation and protected workspaces (BPT-102); account registration and sign-in (BPT-101), replacing the earlier role selector; consumer QR tracking (BPT-009, US-08) on top of batch history and ledger integrity verification (BPT-008, US-07), retailer receipt confirmation (BPT-007, US-06), distributor shipment updates (BPT-006, US-05), the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001).
 
 ## Technology stack
 
@@ -143,6 +143,27 @@ The database has three demo accounts: `demo.farmer`, `demo.distributor` and `dem
 Restarting the backend does not change a demo password that is already stored. To set a new one, clear the stored hash first (`UPDATE users SET password_hash = NULL WHERE username = 'demo.farmer';`) and run `init_db.py` again.
 
 Who may use which workspace and endpoint is documented in [docs/security/ROLE_AUTHORIZATION_MATRIX.md](docs/security/ROLE_AUTHORIZATION_MATRIX.md) (BPT-102).
+
+### Profile and account settings (BPT-104)
+
+Every signed-in user can open **Account settings** from the header (`/account`, any role). The page has three sections:
+
+- **Profile:** full name and username can be changed. The role and the account creation date are shown read-only. Usernames stay unique (any letter case).
+- **Preferences:** table density, comfortable or compact. It applies to the account that saved it, and other accounts are unaffected.
+- **Change password:** requires the current password. The new password must meet the registration rules and differ from the current one. Other sessions stay valid after a change, because sessions are not tied to the password.
+
+Email addresses and theme or notification settings are not part of this version: the account model has no email field, the design has no dark theme, and there is no notification system.
+
+Database change: `users` gains `grid_density` (`comfortable` by default). It is added to existing databases by `init_db` without changing other rows.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/account` | The signed-in account's profile and preferences |
+| PATCH | `/api/account` | Change `full_name` and/or `username`. Any other field, including `role` and `id`, is rejected |
+| PATCH | `/api/account/preferences` | Change `grid_density` (`comfortable` or `compact`) |
+| POST | `/api/account/password` | Change the password: `current_password`, `new_password`, `confirm_password` |
+
+These endpoints take no user id. They act only on the account behind the session, so a request cannot reach another account. `GET /api/session` also reports `grid_density` for the signed-in account.
 
 ### Role workspaces (BPT-103)
 

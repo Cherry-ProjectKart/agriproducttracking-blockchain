@@ -2,14 +2,15 @@ import { useCallback, useEffect, useState } from 'react';
 import ActiveRoleBadge from './components/ActiveRoleBadge.jsx';
 import AppHeader from './components/AppHeader.jsx';
 import useAccountSession from './hooks/useAccountSession.js';
+import AccountSettingsPage from './pages/AccountSettingsPage.jsx';
 import RegisterPage from './pages/RegisterPage.jsx';
 import RoleWorkspacePage from './pages/RoleWorkspacePage.jsx';
 import SignInPage from './pages/SignInPage.jsx';
-import { authPageFromPath, isWorkspacePath, PATHS, workspacePathForRole } from './utils/routes.js';
+import { authPageFromPath, isAccountPath, isWorkspacePath, PATHS, workspacePathForRole } from './utils/routes.js';
 
 export default function App() {
   const account = useAccountSession();
-  const { status, session, roles, rolesError, error, busy, signIn, register, signOut } = account;
+  const { status, session, roles, rolesError, error, busy, signIn, register, signOut, refreshSession } = account;
   const [path, setPath] = useState(() => window.location.pathname);
 
   const navigate = useCallback((to, { replace = false } = {}) => {
@@ -33,14 +34,21 @@ export default function App() {
   const activeRoleKey = activeRole ? activeRole.role : null;
   const expectedPath = activeRoleKey ? workspacePathForRole(activeRoleKey) : null;
 
-  // Route guard. A signed-in user is always moved to their own workspace address, whatever address they
-  // typed or came back to. A signed-out visitor is moved off any workspace address to sign-in. The
-  // server is still the authority: these redirects only keep the address consistent with the session.
+  // Table density is a per-account preference. It comes from the session, so it follows the signed-in user.
+  const gridDensity = activeRole && activeRole.grid_density === 'compact' ? 'compact' : 'comfortable';
+  useEffect(() => {
+    document.documentElement.dataset.gridDensity = gridDensity;
+  }, [gridDensity]);
+
+  // Route guard. A signed-in user is moved to their own workspace address, whatever workspace address they
+  // typed, unless they are on the account settings page. A signed-out visitor is moved off any protected
+  // address to sign-in. The server is still the authority: these redirects only keep the address consistent
+  // with the session.
   useEffect(() => {
     if (status !== 'ready') return;
     if (activeRoleKey) {
-      if (path !== expectedPath) navigate(expectedPath, { replace: true });
-    } else if (isWorkspacePath(path)) {
+      if (path !== expectedPath && !isAccountPath(path)) navigate(expectedPath, { replace: true });
+    } else if (isWorkspacePath(path) || isAccountPath(path)) {
       navigate(PATHS.signIn, { replace: true });
     }
   }, [status, activeRoleKey, expectedPath, path, navigate]);
@@ -57,6 +65,8 @@ export default function App() {
         Loading your session…
       </p>
     );
+  } else if (activeRole && isAccountPath(path)) {
+    content = <AccountSettingsPage onChanged={refreshSession} />;
   } else if (activeRole) {
     content = (
       <RoleWorkspacePage
@@ -80,6 +90,17 @@ export default function App() {
         {activeRole ? (
           <>
             <ActiveRoleBadge label={activeRole.role_label} name={activeRole.display_name} />
+            <a
+              className="btn btn--secondary"
+              href={PATHS.account}
+              aria-current={isAccountPath(path) ? 'page' : undefined}
+              onClick={(event) => {
+                event.preventDefault();
+                navigate(PATHS.account);
+              }}
+            >
+              Account settings
+            </a>
             <button type="button" className="btn btn--secondary" onClick={handleSignOut} disabled={busy}>
               Sign out
             </button>
@@ -100,7 +121,7 @@ export default function App() {
         {content}
       </main>
       <footer className="app-footer">
-        <p>Demonstration build · BPT-101</p>
+        <p>Demonstration build · BPT-104</p>
       </footer>
     </div>
   );

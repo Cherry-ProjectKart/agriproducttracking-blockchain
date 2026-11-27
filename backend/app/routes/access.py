@@ -16,6 +16,7 @@ from app.db import get_db
 from app.errors import ApiError
 from app.models.roles import SUPPORTED_ROLES
 from app.services.account_service import AccountDisabledError, authenticate
+from app.services.profile_service import get_profile
 from app.services.access_service import (
     get_role_actions,
     list_roles,
@@ -40,12 +41,14 @@ def session_payload() -> dict[str, object]:
             "display_name": None,
             "username": None,
         }
+    profile = get_profile(get_db(), active["user_id"])
     return {
         "active": True,
         "role": active["role"],
         "role_label": role_label(active["role"]),
         "display_name": active["display_name"],
         "username": active["username"],
+        "grid_density": profile["grid_density"] if profile else "comfortable",
     }
 
 

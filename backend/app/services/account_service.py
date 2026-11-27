@@ -60,6 +60,22 @@ def _required_string(payload: dict[str, Any], field: str, details: dict[str, str
     return value
 
 
+def full_name_problem(full_name: str) -> str | None:
+    """Return the rule a full name breaks, or None. The value must already be trimmed."""
+    if not (FULL_NAME_MIN_LENGTH <= len(full_name) <= FULL_NAME_MAX_LENGTH):
+        return f"Full name must be {FULL_NAME_MIN_LENGTH} to {FULL_NAME_MAX_LENGTH} characters."
+    return None
+
+
+def username_problem(username: str) -> str | None:
+    """Return the rule a username breaks, or None. The value must already be normalised (trimmed, lower-case)."""
+    if not (USERNAME_MIN_LENGTH <= len(username) <= USERNAME_MAX_LENGTH):
+        return f"Username must be {USERNAME_MIN_LENGTH} to {USERNAME_MAX_LENGTH} characters."
+    if not USERNAME_PATTERN.match(username):
+        return "Use letters, numbers, dots, underscores or hyphens. Start with a letter or number."
+    return None
+
+
 def password_problem(password: str) -> str | None:
     """Return the first password rule the value breaks, or None when it is acceptable."""
     if not (PASSWORD_MIN_LENGTH <= len(password) <= PASSWORD_MAX_LENGTH):
@@ -74,21 +90,16 @@ def validate_registration(payload: dict[str, Any]) -> dict[str, str]:
     details: dict[str, str] = {}
 
     full_name = _required_string(payload, "full_name", details).strip()
-    if full_name and not (FULL_NAME_MIN_LENGTH <= len(full_name) <= FULL_NAME_MAX_LENGTH):
-        details["full_name"] = (
-            f"Full name must be {FULL_NAME_MIN_LENGTH} to {FULL_NAME_MAX_LENGTH} characters."
-        )
+    if full_name:
+        problem = full_name_problem(full_name)
+        if problem:
+            details["full_name"] = problem
 
     username = normalise_username(_required_string(payload, "username", details))
     if username and "username" not in details:
-        if not (USERNAME_MIN_LENGTH <= len(username) <= USERNAME_MAX_LENGTH):
-            details["username"] = (
-                f"Username must be {USERNAME_MIN_LENGTH} to {USERNAME_MAX_LENGTH} characters."
-            )
-        elif not USERNAME_PATTERN.match(username):
-            details["username"] = (
-                "Use letters, numbers, dots, underscores or hyphens. Start with a letter or number."
-            )
+        problem = username_problem(username)
+        if problem:
+            details["username"] = problem
 
     password = _required_string(payload, "password", details)
     if password:
