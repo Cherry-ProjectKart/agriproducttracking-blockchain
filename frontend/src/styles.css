@@ -510,6 +510,27 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* BPT-106: QR actions and their status message */
+.batch-qr__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.batch-qr__status {
+  margin: 0.75rem 0 0;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.batch-qr__status--success {
+  color: #166534;
+}
+
+.batch-qr__status--danger {
+  color: #b91c1c;
+}
+
 .btn--small {
   padding: 0.25rem 0.7rem;
   font-size: 0.85rem;

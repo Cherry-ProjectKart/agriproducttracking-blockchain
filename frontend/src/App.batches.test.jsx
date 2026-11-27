@@ -213,8 +213,8 @@ describe('Batch IDs and QR codes for the farmer', () => {
 
     const image = await screen.findByRole('img', { name: 'QR code for batch PB-7K2M-9QXD' });
     expect(image.getAttribute('src')).toBe('/api/batches/1/qr.png');
-    const download = screen.getAllByRole('link', { name: 'Download QR code (PNG)' })[0];
-    expect(download.getAttribute('href')).toBe('/api/batches/1/qr.png?download=1');
+    expect(screen.getAllByRole('button', { name: 'Download QR code (PNG)' })[0].disabled).toBe(false);
+    expect(screen.getAllByRole('button', { name: 'Copy tracking link' })[0]).toBeTruthy();
   });
 
   it('opens a listed batch to show its details and QR code, and closes again', async () => {
