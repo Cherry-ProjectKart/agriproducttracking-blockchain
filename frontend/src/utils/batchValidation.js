@@ -8,6 +8,7 @@ export const BATCH_LIMITS = Object.freeze({
   description: 500,
   unit: 20,
   origin: 200,
+  quantityMax: 1000000000,
 });
 
 export const EMPTY_BATCH_FORM = Object.freeze({
@@ -56,6 +57,8 @@ export function validateBatchForm(values) {
     errors.quantity = 'Quantity must be a positive number, for example 25 or 12.5.';
   } else if (Number(quantity) <= 0) {
     errors.quantity = 'Quantity must be greater than zero.';
+  } else if (Number(quantity) > BATCH_LIMITS.quantityMax) {
+    errors.quantity = `Quantity must be ${BATCH_LIMITS.quantityMax.toLocaleString('en-US')} or less.`;
   }
 
   const unit = requiredText(values.unit, 'Unit', BATCH_LIMITS.unit);

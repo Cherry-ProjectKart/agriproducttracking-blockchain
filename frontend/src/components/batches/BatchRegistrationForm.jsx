@@ -5,6 +5,9 @@ import { BATCH_LIMITS, EMPTY_BATCH_FORM, buildBatchPayload, validateBatchForm } 
 
 const FIELD_ORDER = ['productName', 'description', 'quantity', 'unit', 'origin', 'harvestDate'];
 
+// Suggestions only: the unit field still accepts any short text, as before.
+const UNIT_SUGGESTIONS = ['kg', 'g', 'tonnes', 'litres', 'crates', 'bags', 'boxes', 'pieces'];
+
 const NETWORK_ERROR = 'Could not reach the server. Your batch was not saved; try again.';
 const GENERIC_ERROR = 'The batch could not be registered. Please try again.';
 
@@ -140,7 +143,19 @@ export default function BatchRegistrationForm({ onRegistered, createBatch = crea
           <label htmlFor={fieldId('unit')}>
             Unit <span className="required-mark" aria-hidden="true">*</span>
           </label>
-          <input type="text" maxLength={BATCH_LIMITS.unit} placeholder="for example kg or crates" autoComplete="off" {...fieldProps('unit')} />
+          <input
+            type="text"
+            maxLength={BATCH_LIMITS.unit}
+            placeholder="for example kg or crates"
+            autoComplete="off"
+            list="batch-unit-suggestions"
+            {...fieldProps('unit')}
+          />
+          <datalist id="batch-unit-suggestions">
+            {UNIT_SUGGESTIONS.map((unit) => (
+              <option key={unit} value={unit} />
+            ))}
+          </datalist>
           {renderError('unit')}
         </div>
 

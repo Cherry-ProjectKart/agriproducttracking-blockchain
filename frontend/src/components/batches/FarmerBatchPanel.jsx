@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchBatches } from '../../services/batchService.js';
+import BatchDescriptionForm from './BatchDescriptionForm.jsx';
 import BatchDetails from './BatchDetails.jsx';
 import BatchList from './BatchList.jsx';
 import BatchRegistrationForm from './BatchRegistrationForm.jsx';
@@ -12,7 +13,7 @@ const LIST_ERROR = 'Could not load your batches. Make sure the backend is runnin
  * Farmer-only batch area: the registration form, the confirmation with the new batch ID and
  * QR code, and the list of the farmer's batches. Rendered only for the farmer role.
  */
-export default function FarmerBatchPanel() {
+export default function FarmerBatchPanel({ onViewHistory = null }) {
   const [registered, setRegistered] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [list, setList] = useState({ status: 'loading', batches: [] });
@@ -33,6 +34,14 @@ export default function FarmerBatchPanel() {
     loadBatches(controller.signal);
     return () => controller.abort();
   }, [loadBatches]);
+
+  // Replaces one batch in the list after a save, so the table and details show the saved description.
+  function replaceBatch(updated) {
+    setList((current) => ({
+      ...current,
+      batches: current.batches.map((batch) => (batch.id === updated.id ? updated : batch)),
+    }));
+  }
 
   function handleRegistered(batch) {
     setRegistered(batch);
@@ -87,12 +96,14 @@ export default function FarmerBatchPanel() {
             batches={list.batches}
             selectedId={selectedId}
             onSelect={(batch) => setSelectedId(batch.id === selectedId ? null : batch.id)}
+            onViewHistory={onViewHistory}
           />
         ) : null}
 
         {selected ? (
           <div className="batch-selected">
             <BatchDetails batch={selected} headingId="selected-batch-heading" />
+            <BatchDescriptionForm batch={selected} onSaved={replaceBatch} />
             <button type="button" className="btn btn--secondary" onClick={() => setSelectedId(null)}>
               Close details
             </button>
