@@ -11,7 +11,7 @@ vi.mock('./services/accessService.js', async (importOriginal) => ({
   ...(await importOriginal()),
   fetchRoles: vi.fn(),
   fetchSession: vi.fn(),
-  startSession: vi.fn(),
+  signIn: vi.fn(),
   endSession: vi.fn(),
   fetchRoleActions: vi.fn(),
 }));
@@ -241,11 +241,11 @@ describe('Batch IDs and QR codes for the farmer', () => {
 
   it('does not show a batch ID or QR code to Distributor and Retailer sessions', async () => {
     accessService.fetchSession.mockResolvedValue(SIGNED_OUT);
-    accessService.startSession.mockResolvedValue(session('retailer', 'Retailer', 'Demo Retailer'));
+    accessService.signIn.mockResolvedValue(session('retailer', 'Retailer', 'Demo Retailer'));
     accessService.fetchRoleActions.mockResolvedValue(actionsFor('retailer'));
     render(<App />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /^Retailer/ }));
+    await signInFor('retailer');
     expect(await screen.findByRole('heading', { name: 'Retailer workspace' })).toBeTruthy();
 
     expect(screen.queryByRole('img', { name: /QR code/ })).toBeNull();
@@ -272,11 +272,11 @@ describe('Batch registration is hidden from other roles', () => {
     ['distributor', 'Distributor', 'Record shipment update'],
     ['retailer', 'Retailer', 'Confirm receipt of batch'],
   ])('a %s session has no batch form, no registration action and never calls the batch API', async (role, label, action) => {
-    accessService.startSession.mockResolvedValue(session(role, label, `Demo ${label}`));
+    accessService.signIn.mockResolvedValue(session(role, label, `Demo ${label}`));
     accessService.fetchRoleActions.mockResolvedValue(actionsFor(role));
     render(<App />);
 
-    fireEvent.click(await screen.findByRole('button', { name: new RegExp(`^${label}`) }));
+    await signInFor(role);
 
     expect(await screen.findByRole('heading', { name: `${label} workspace` })).toBeTruthy();
     expect(await screen.findByText(action)).toBeTruthy();
@@ -288,3 +288,9 @@ describe('Batch registration is hidden from other roles', () => {
     expect(batchService.createBatch).not.toHaveBeenCalled();
   });
 });
+
+async function signInFor(role) {
+  fireEvent.change(await screen.findByLabelText('Username'), { target: { value: `demo.${role}` } });
+  fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'DemoPassword1' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Sign In' }));
+}

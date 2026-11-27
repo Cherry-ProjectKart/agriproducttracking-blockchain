@@ -5,6 +5,7 @@ Values are read from environment variables (optionally loaded from backend/.env)
 
 import os
 import secrets
+from datetime import timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -38,6 +39,17 @@ def _tracking_base_url(raw: str) -> str:
     return value
 
 
+def _session_lifetime_seconds(raw: str) -> int:
+    """Sign-in lifetime in seconds. Must be a number of hours between 0.1 and 168 (one week)."""
+    try:
+        hours = float(raw)
+    except ValueError as exc:
+        raise ValueError("SESSION_LIFETIME_HOURS must be a number of hours, for example 12") from exc
+    if not 0.1 <= hours <= 168:
+        raise ValueError("SESSION_LIFETIME_HOURS must be between 0.1 and 168")
+    return int(hours * 3600)
+
+
 def _resolve_database_path(raw: str) -> str:
     path = Path(raw)
     if not path.is_absolute():
@@ -47,6 +59,7 @@ def _resolve_database_path(raw: str) -> str:
 
 def build_config() -> dict[str, object]:
     """Build the configuration mapping from the current environment."""
+    lifetime_seconds = _session_lifetime_seconds(os.getenv("SESSION_LIFETIME_HOURS", "12"))
     return {
         "APP_NAME": os.getenv("APP_NAME", "Blockchain Product Tracking"),
         "DATABASE_PATH": _resolve_database_path(
@@ -59,6 +72,9 @@ def build_config() -> dict[str, object]:
         "SESSION_COOKIE_SAMESITE": "Lax",
         # Localhost runs over plain HTTP, so Secure cookies would not be sent. Enable behind HTTPS.
         "SESSION_COOKIE_SECURE": _env_bool("SESSION_COOKIE_SECURE", False),
+        # Idle-independent lifetime of a sign-in. The browser cookie and the server check both use it.
+        "SESSION_LIFETIME_SECONDS": lifetime_seconds,
+        "PERMANENT_SESSION_LIFETIME": timedelta(seconds=lifetime_seconds),
         # Host used in QR codes. Use the host machine's LAN address when scanning from another device.
         "TRACKING_BASE_URL": _tracking_base_url(os.getenv("TRACKING_BASE_URL", "http://localhost:5173")),
     }

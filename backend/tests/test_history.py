@@ -13,6 +13,8 @@ import pytest
 from app.db import init_db
 from app.services.ledger_verification import verify_ledger
 
+from tests.auth_helpers import sign_in
+
 FARMER_KEY = "aaaa1111-bbbb-4ccc-8ddd-000000000201"
 VALID_BATCH = {
     "product_name": "Basmati Rice",
@@ -44,7 +46,7 @@ def _connect(db_path):
 
 
 def _role(client, role):
-    assert client.post("/api/session", json={"role": role}).status_code == 201
+    assert sign_in(client, role).status_code == 200
 
 
 def _scenario(client):

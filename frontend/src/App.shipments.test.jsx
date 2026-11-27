@@ -10,7 +10,7 @@ vi.mock('./services/accessService.js', async (importOriginal) => ({
   ...(await importOriginal()),
   fetchRoles: vi.fn(),
   fetchSession: vi.fn(),
-  startSession: vi.fn(),
+  signIn: vi.fn(),
   endSession: vi.fn(),
   fetchRoleActions: vi.fn(),
 }));

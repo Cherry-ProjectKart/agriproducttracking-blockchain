@@ -2,12 +2,19 @@
 -- Idempotent: safe to run repeatedly (IF NOT EXISTS everywhere).
 -- Foreign key enforcement is enabled per connection in app/db.py (PRAGMA foreign_keys = ON).
 
+-- display_name holds the account holder's full name. username is stored lower-case (BPT-101).
+-- password_hash is a salted werkzeug hash, never the password. It is nullable so that demo accounts
+-- created before their password is configured can exist; such accounts cannot sign in.
+-- Columns added by BPT-101 on existing databases are created by app/migrations.py.
 CREATE TABLE IF NOT EXISTS users (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    display_name TEXT    NOT NULL CHECK (length(trim(display_name)) > 0),
-    username     TEXT    NOT NULL UNIQUE CHECK (length(trim(username)) > 0),
-    role         TEXT    NOT NULL CHECK (role IN ('farmer', 'distributor', 'retailer')),
-    created_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    display_name  TEXT    NOT NULL CHECK (length(trim(display_name)) > 0),
+    username      TEXT    NOT NULL UNIQUE CHECK (length(trim(username)) > 0),
+    role          TEXT    NOT NULL CHECK (role IN ('farmer', 'distributor', 'retailer')),
+    created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    password_hash TEXT,
+    status        TEXT    NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
+    updated_at    TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_role ON users (role);

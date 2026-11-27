@@ -32,6 +32,8 @@ from app.services.ledger_service import (
 )
 
 # Known answer: SHA-256 of the genesis hash input (see the module docstring for the format).
+from tests.auth_helpers import sign_in
+
 GENESIS_HASH = "20966f2f77cdf6f44a9c38308e39ea2640d576a436e401f39504c3de9447f603"
 GENESIS_PAYLOAD = '{"event_type":"GENESIS"}'
 
@@ -305,7 +307,7 @@ def test_block_hash_changes_when_stored_event_data_is_altered(db_path):
 
 
 def _as_farmer(client):
-    assert client.post("/api/session", json={"role": "farmer"}).status_code == 201
+    assert sign_in(client, "farmer").status_code == 200
 
 
 def _register(client, key=KEY, **changes):
@@ -592,7 +594,7 @@ def test_ledger_requires_an_active_session(client):
 
 @pytest.mark.parametrize("role", ["farmer", "distributor", "retailer"])
 def test_every_demonstration_role_can_read_the_ledger(client, role):
-    client.post("/api/session", json={"role": role})
+    sign_in(client, role)
 
     response = client.get("/api/ledger")
 
@@ -647,7 +649,7 @@ def test_ledger_responses_contain_no_personal_or_session_data(client):
     text = json.dumps(body)
     assert "demo.farmer" not in text
     assert "Demo Farmer" not in text
-    assert "demo_access" not in text
+    assert "account_session" not in text
     assert set(body["blocks"][1].keys()) == {
         "index", "timestamp", "event_type", "event_id", "batch_id", "event_data", "previous_hash", "block_hash"
     }

@@ -1,4 +1,5 @@
 import sqlite3
+import time
 
 import pytest
 
@@ -6,6 +7,8 @@ from app.db import init_db
 from app.services.batch_identifiers import BATCH_ID_PATTERN
 from app.services.access_service import seed_demo_users
 from app.services.batch_service import register_batch, validate_batch_input
+
+from tests.auth_helpers import sign_in
 
 KEY = "11111111-aaaa-4bbb-8ccc-000000000001"
 OTHER_KEY = "22222222-aaaa-4bbb-8ccc-000000000002"
@@ -21,12 +24,12 @@ VALID = {
 
 
 def _select_role(client, role):
-    return client.post("/api/session", json={"role": role})
+    return sign_in(client, role)
 
 
 def _as_farmer(client):
     response = _select_role(client, "farmer")
-    assert response.status_code == 201
+    assert response.status_code == 200
 
 
 def _post(client, payload, key=KEY):
@@ -306,7 +309,7 @@ def test_same_key_from_another_farmer_is_a_conflict(client, db_path):
     conn.commit()
     conn.close()
     with client.session_transaction() as session:
-        session["demo_access"] = {"role": "farmer", "user_id": other_id, "display_name": "Other Farmer"}
+        session["account_session"] = {"user_id": other_id, "issued_at": int(time.time())}
 
     response = _post(client, VALID)
 
@@ -353,7 +356,7 @@ def test_request_without_session_is_rejected(client, db_path):
 
 def test_session_for_missing_user_is_rejected(client, db_path):
     with client.session_transaction() as session:
-        session["demo_access"] = {"role": "farmer", "user_id": 9999, "display_name": "Ghost"}
+        session["account_session"] = {"user_id": 9999, "issued_at": int(time.time())}
 
     response = _post(client, VALID)
 

@@ -14,7 +14,7 @@ import re
 
 from flask import Blueprint, Response, current_app, jsonify, request
 
-from app.auth import current_demo_session, require_role
+from app.auth import current_account, require_role
 from app.db import get_db
 from app.errors import ApiError
 from app.models.batch import IDEMPOTENCY_KEY_PATTERN
@@ -38,10 +38,10 @@ _KEY_RE = re.compile(IDEMPOTENCY_KEY_PATTERN)
 
 def _active_farmer_id() -> int:
     """The farmer behind the active session. Re-checked in the database on every request."""
-    active = current_demo_session()
+    active = current_account()
     farmer_id = active["user_id"] if active is not None else None
     if not isinstance(farmer_id, int) or not farmer_exists(get_db(), farmer_id):
-        raise ApiError(401, "Your session is no longer valid. Select a role to sign in again.")
+        raise ApiError(401, "Your session is no longer valid. Sign in again to continue.")
     return farmer_id
 
 

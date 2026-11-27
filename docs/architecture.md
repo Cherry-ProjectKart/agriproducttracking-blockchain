@@ -63,7 +63,7 @@ users 1 ──── * product_batches 1 ──── * supply_chain_events
 
 | Table | Key constraints |
 |---|---|
-| `users` | PK `id`; `username` UNIQUE; `role` ∈ {farmer, distributor, retailer} |
+| `users` | PK `id`; `username` UNIQUE (stored lower-case); `role` ∈ {farmer, distributor, retailer}; `password_hash` (nullable, salted scrypt); `status` ∈ {active, disabled}; `display_name` holds the full name; `updated_at` |
 | `product_batches` | PK `id`; `batch_code` UNIQUE batch ID (`PB-XXXX-XXXX`, required by trigger); `client_request_id` UNIQUE (idempotency key, nullable); `quantity` > 0; FK `created_by` → `users.id` (RESTRICT) |
 | `supply_chain_events` | PK `id`; FK `batch_id` → `product_batches.id` (CASCADE); `actor_role` constrained to the three roles |
 | `ledger_blocks` | PK `id`; `block_index` UNIQUE ≥ 0; `block_hash` UNIQUE; `event_id` → `supply_chain_events.id`, UNIQUE (one block per event; BPT-005) |
@@ -91,15 +91,15 @@ Both steps are idempotent, and an interrupted upgrade completes on the next `ini
 | Frontend API target | `VITE_API_PROXY_TARGET` in `frontend/.env.local` | Defaults to `http://127.0.0.1:5000`. |
 | CORS | `CORS_ORIGINS` | Defaults to the Vite dev origins. Only `/api/*` is opened. |
 
-## 5a. Demo role access (US-01)
+## 5a. Accounts and sign-in (BPT-101, extends US-01)
 
-- **Sample accounts:** `init_db` seeds three rows into the existing `users` table (`demo.farmer`, `demo.distributor`, `demo.retailer`). No schema change or new table is involved, and seeding is idempotent.
-- **Role constants:** `app/models/roles.py` defines the supported roles, labels, sample accounts and role-specific actions. `app/services/access_service.py` validates roles and looks up sample accounts.
-- **Session:** `POST /api/session` stores `{role, user_id, display_name}` in Flask's signed session cookie (HTTP-only, `SameSite=Lax`). `DELETE /api/session` clears it.
-- **Enforcement:** `app/auth.py` reads the role from the signed cookie on every request. The `require_role(...)` decorator returns `401` without a session and `403` for a disallowed role. The frontend never sends a role to a protected endpoint; it only receives what the server returns.
-- **Frontend:** `useDemoSession` (in `src/hooks/`) mirrors the server session. `App` shows the role-selection screen (`DashboardPage`) when no role is active, or the role workspace (`RoleWorkspacePage`) with the active-role badge and **Exit session** otherwise.
-
-Limitations are listed in the README under "Demo role access". This is a demonstration switch, not authentication.
+- **Accounts:** `users` gains `password_hash`, `status` and `updated_at` (added by `migrations.ensure_user_account_columns` on existing databases, no rows changed). Each account has one role. Usernames are stored lower-case, so the UNIQUE constraint is case-insensitive in practice.
+- **Registration:** `POST /api/accounts` (`routes/accounts.py`) validates every field on the server (`services/account_service.validate_registration`, rules in `models/account.py`), stores a hash only, and signs the account in.
+- **Sign-in:** `POST /api/session` (`routes/access.py`) takes `{username, password}`. `services/account_service.authenticate` verifies the hash with `check_password_hash`. The role is read from the database; a role in the request body is ignored.
+- **Session:** the signed Flask cookie stores `{user_id, issued_at}` only. `app/auth.py:current_account` reads the account from the database on every request and rejects missing, disabled, unsupported-role or expired sessions. The lifetime is `SESSION_LIFETIME_HOURS`.
+- **Enforcement:** `require_role` is unchanged in contract (401 without a valid sign-in, 403 for a disallowed role). Batch, shipment and receipt routes use `current_account` for the account id.
+- **Demo accounts:** `services/access_service.seed_demo_users` creates `demo.farmer`, `demo.distributor` and `demo.retailer`. Their passwords come from `DEMO_*_PASSWORD`, are hashed, and are set only when no hash is stored. Restarting never overwrites a stored password.
+- **Frontend:** `useAccountSession` mirrors `/api/session`. `App` shows `SignInPage` or `RegisterPage` (path check in `utils/routes.js`), or the role workspace when signed in. Sign out calls `DELETE /api/session`. The `/track/<batch ID>` route is unchanged and does not need a session.
 
 ## 5b. Product batch registration (US-02)
 
@@ -173,6 +173,6 @@ Limitations are listed in the README under "Demo role access". This is a demonst
 
 ## 7. Known limitations
 
-- Single-user local setup. Demo role access is a role selector without passwords or authentication (see section 5a).
+- Single-user local setup. Sign-in has no rate limit, CSRF token or password reset (see section 5a).
 - SQLite single-writer model; suitable for the prototype only.
 - No migrations tool yet. Schema changes will be introduced with the feature stories that need them.

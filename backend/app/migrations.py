@@ -142,3 +142,27 @@ def backfill_batch_ids(conn: sqlite3.Connection) -> list[str]:
         conn.rollback()
         raise
     return assigned
+
+
+# Columns added to users by BPT-101 (account registration and sign-in). Each is added only when missing.
+_USER_ACCOUNT_COLUMNS = (
+    ("password_hash", "TEXT"),
+    ("status", "TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled'))"),
+    ("updated_at", "TEXT"),
+)
+
+
+def ensure_user_account_columns(conn: sqlite3.Connection) -> list[str]:
+    """Add password_hash, status and updated_at to users when an older database lacks them (BPT-101).
+
+    Existing rows keep their values; password_hash stays NULL until the account gets a password.
+    Safe to run repeatedly. Returns the names of the columns that were added.
+    """
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
+    added = []
+    for name, definition in _USER_ACCOUNT_COLUMNS:
+        if name not in existing:
+            conn.execute(f"ALTER TABLE users ADD COLUMN {name} {definition}")
+            added.append(name)
+    conn.commit()
+    return added

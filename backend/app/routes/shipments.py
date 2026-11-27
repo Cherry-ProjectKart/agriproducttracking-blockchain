@@ -11,7 +11,7 @@ import re
 
 from flask import Blueprint, jsonify, request
 
-from app.auth import current_demo_session, require_role
+from app.auth import current_account, require_role
 from app.db import get_db
 from app.errors import ApiError
 from app.models.batch import IDEMPOTENCY_KEY_PATTERN
@@ -32,10 +32,10 @@ _KEY_RE = re.compile(IDEMPOTENCY_KEY_PATTERN)
 
 def _active_distributor_ok() -> None:
     """Re-check the session's user in the database. A stale session gets 401."""
-    active = current_demo_session()
+    active = current_account()
     user_id = active["user_id"] if active is not None else None
     if not isinstance(user_id, int) or not distributor_exists(get_db(), user_id):
-        raise ApiError(401, "Your session is no longer valid. Select a role to sign in again.")
+        raise ApiError(401, "Your session is no longer valid. Sign in again to continue.")
 
 
 def _submission_key() -> str:
