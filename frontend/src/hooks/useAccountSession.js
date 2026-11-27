@@ -66,6 +66,11 @@ export default function useAccountSession() {
     return next;
   }, []);
 
+  /** Re-reads the session from the server, for example after the profile or preferences change. */
+  const refreshSession = useCallback(async () => {
+    setSession(await fetchSession());
+  }, []);
+
   const signOut = useCallback(async () => {
     setBusy(true);
     setError(null);
@@ -90,6 +95,7 @@ export default function useAccountSession() {
     busy,
     signIn: signInWith,
     register: registerWith,
+    refreshSession,
     signOut,
   };
 }
