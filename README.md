@@ -2,7 +2,7 @@
 
 A blockchain-enabled system for tracing agricultural products from farm to retail. Every supply-chain event is recorded in a tamper-evident ledger so that a product's journey can be verified by farmers, distributors, retailers and consumers.
 
-> **Status:** Distributor shipment lifecycle and movement management (BPT-107); Farmer batch registration and management (BPT-105); user profile and account settings (BPT-104); role-specific workspaces and responsive grids (BPT-103); strict role isolation and protected workspaces (BPT-102); account registration and sign-in (BPT-101), replacing the earlier role selector; consumer QR tracking (BPT-009, US-08) on top of batch history and ledger integrity verification (BPT-008, US-07), retailer receipt confirmation (BPT-007, US-06), distributor shipment updates (BPT-006, US-05), the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001).
+> **Status:** Ledger integrity and event recording (BPT-108); Distributor shipment lifecycle and movement management (BPT-107); Farmer batch registration and management (BPT-105); user profile and account settings (BPT-104); role-specific workspaces and responsive grids (BPT-103); strict role isolation and protected workspaces (BPT-102); account registration and sign-in (BPT-101), replacing the earlier role selector; consumer QR tracking (BPT-009, US-08) on top of batch history and ledger integrity verification (BPT-008, US-07), retailer receipt confirmation (BPT-007, US-06), distributor shipment updates (BPT-006, US-05), the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001).
 
 ## Technology stack
 
@@ -569,6 +569,120 @@ None. The existing `product_batches.current_status`, `supply_chain_events` (incl
 
 - Receipt is recorded only as a status change and an event. The retailer cannot add a note, and there is no receipt history view. The ledger view shows the event.
 - The demo cannot prove that the physical goods arrived. The ledger records the confirmation, not the goods.
+
+## Ledger integrity and event recording (BPT-108)
+
+This section describes the ledger as implemented. The sections above (US-04, US-07) cover the ledger table, the API and the views in more detail.
+
+### What the ledger is
+
+The ledger is a local, hash-linked record stored in one SQLite table, `ledger_blocks`, in the demonstration database. Each block stores one application event. Changing a stored block changes its hash, which no longer matches the link in the next block, so the change can be detected.
+
+This is **not a decentralized blockchain network**. There is one database, one application, no peers, no consensus, no tokens and no external infrastructure. Whoever controls the database file controls the ledger.
+
+Hash verification shows that recorded data has not been modified since it was written. It does **not** prove that the product information was true when it was entered.
+
+### Genesis and subsequent blocks
+
+- **Genesis (block 0)** is created before the first event. Its index is 0, its timestamp is `1970-01-01T00:00:00.000Z`, its event data is `{"event_type":"GENESIS"}`, and its previous hash is 64 zero characters. The verifier checks each of these values. The genesis block references no supply-chain event.
+- **Each later block** gets the next index, the timestamp of its event, the canonical event data, the hash of the block before it, and its own hash.
+- Block indexes are unique in the table, and the verifier checks that they run 0, 1, 2, … with no gap or repeat.
+
+### How an application event becomes a block
+
+Every lifecycle operation that records an event follows the same steps, inside one write transaction (`BEGIN IMMEDIATE`):
+
+1. The request is validated and the caller's role and ownership are checked.
+2. The application record is written (a new batch, a new status, or a new receipt status).
+3. One `supply_chain_events` row is inserted with the event type, actor role, status and the event timestamp.
+4. One ledger block is appended. Its event data is built from the event and its record, its index and previous hash come from the latest block, and its hash is calculated on the backend.
+5. The transaction is committed. If any step fails, everything is rolled back, so no record, event or block is left behind.
+
+| Operation | Event type | Block event data |
+|---|---|---|
+| Farmer registers a batch | `PRODUCT_REGISTERED` | event id, batch ID, actor `farmer`, status, product name, quantity, unit, origin, harvest date |
+| Distributor records a movement | `SHIPMENT_UPDATED` | event id, batch ID, actor `distributor`, status, note, event timestamp |
+| Retailer confirms receipt | `RECEIPT_CONFIRMED` | event id, batch ID, actor `retailer`, status, event timestamp |
+
+Not recorded in the ledger: a failed request, an idempotent replay of a request that already succeeded, a description edit, a QR download, and any read-only view. The tests check each of these.
+
+**Timestamps.** The event and its block share one timestamp for registrations, shipments and receipts. Registrations made before BPT-108 keep the times they were stored with. Their blocks were not rewritten, and the verifier does not compare registration timestamps.
+
+### SHA-256 and previous-hash linking
+
+The block hash is SHA-256 over the UTF-8 bytes of this canonical JSON text:
+
+```
+{"event_data":<stored event JSON as a string>,"index":<index>,"previous_hash":"<64 hex>","timestamp":"<UTC ISO>"}
+```
+
+- Canonical JSON means sorted keys, no spaces, and non-ASCII characters kept as UTF-8.
+- The block's own hash is not part of its hash input.
+- Each block's `previous_hash` is the `block_hash` of the block before it. The genesis block's previous hash is 64 zeros.
+
+The hash algorithm and serialization are unchanged from BPT-005. Existing hashes are not recalculated.
+
+### Verifying the ledger
+
+- **API:** `GET /api/ledger/verify`. Any signed-in demonstration session can call it. It is read-only: the verifier runs with `PRAGMA query_only` and writes nothing.
+- **Interface:** the **Verify ledger** button in the Ledger integrity section of the workspace. The result shows *valid* or *invalid*, the number of blocks checked, the first failing block and the reason for each failure.
+- **Automated tests:** `python -m pytest tests/test_ledger_integrity.py -q` (run from `backend/`).
+
+The verifier runs these checks, in this order:
+
+| Check | What it detects |
+|---|---|
+| `genesis` | Missing or altered genesis block, or a second block claiming index 0 |
+| `sequence` | Missing, repeated or reordered block indexes |
+| `canonical_data` | Event data that is not valid canonical JSON |
+| `timestamps` | Timestamps not in the stored UTC millisecond format |
+| `hash_format` | Hashes that are not 64 lowercase hexadecimal characters |
+| `previous_hash_links` | A block whose previous hash is not the recalculated hash of the block before it |
+| `block_hashes` | A stored block hash that does not match the recalculated hash |
+| `event_references` | A block that names an event which does not exist, or names a different event, type or batch |
+| `event_uniqueness` | An event referenced by more than one block |
+| `event_consistency` | A block whose status, actor, note, timestamp or (for registrations) product facts differ from the stored event and batch |
+| `event_coverage` | A supported event (registration, shipment, receipt) that has no block |
+
+The result also reports the number of blocks checked, the latest index, the first failing block, the recalculated latest hash and the verification time. The verifier never repairs or rewrites a chain.
+
+### Tampering demonstration
+
+The tampering tests run only against temporary databases that the tests create. They never change the demonstration database, and no interface control can change the ledger.
+
+Each scenario changes a copy of a valid ledger and checks that the verifier reports it:
+
+- editing a stored event payload (detected by `block_hashes` and `event_consistency`);
+- changing a block hash (`block_hashes`);
+- changing a previous hash (`previous_hash_links`);
+- deleting a middle block (`sequence`, `previous_hash_links`);
+- deleting the last block (`event_coverage`, because the chain alone cannot show that its final block is missing);
+- removing a block's event reference (`event_coverage`);
+- pointing a block at a missing event (`event_references`);
+- referencing one event from two blocks (`event_uniqueness`, with the unique index removed in the test copy);
+- altering the genesis block (`genesis`);
+- changing an event row after its block was written (`event_consistency`);
+- editing a block and recalculating every hash after it (`event_consistency`, because the event record still holds the original values).
+
+What these prove: a change to recorded data, to a link, or to the events that describe the records is detectable. What they do not prove: that someone who rewrites every block and every matching event row produces a chain that fails verification. Only an external anchor, such as a hash published elsewhere, could reveal that, and this demonstration has none.
+
+### Transactions, concurrency and failures
+
+- Each write takes the database write lock up front (`BEGIN IMMEDIATE`), so two writes cannot both extend the same chain tip.
+- A forced failure at each stage of a registration, a shipment and a receipt (batch or status update, event insert, block insert) leaves no batch change, event or block. The tests install a failure in the database at each stage, check that the database is unchanged, then retry the same request successfully.
+- Four threads, each registering five batches on its own connection, produce block indexes 0 to 20 with no gap or repeat, and the chain verifies.
+
+### Limitations of a local, centralised ledger
+
+- Whoever has write access to the database can rebuild a consistent chain. Hashes detect changes; they do not prevent them.
+- Blocks record the actor's role, not which user acted.
+- There is no external anchoring, signing or key management.
+- A removed last block is reported only through its missing event, not through the chain itself.
+- Hashes prove that data has not changed since it was written. They do not prove that the product information was true.
+
+### Historical data
+
+BPT-108 added no database migration and changed no existing block. Registrations made before this story keep their stored timestamps and hashes. On a copy of the demonstration database, the verifier reports the existing 14 blocks as valid under the new checks.
 
 ## Batch history and ledger integrity (US-07)
 

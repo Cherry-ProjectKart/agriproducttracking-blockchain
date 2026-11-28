@@ -531,6 +531,32 @@ body {
   color: #b91c1c;
 }
 
+/* BPT-108: ledger block count and hash copy */
+.ledger__count {
+  margin: 0 0 0.5rem;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+
+.hash-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: flex-start;
+}
+
+.hash-cell__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.hash-cell__message {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
 /* BPT-107: shipment status pills, details and confirmation */
 .shipment-status-pill {
   display: inline-block;
