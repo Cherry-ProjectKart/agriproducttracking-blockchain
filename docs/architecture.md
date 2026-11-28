@@ -72,7 +72,7 @@ Indexes: `users(role)`, `product_batches(created_by)`, `product_batches(current_
 
 Foreign keys are enforced per connection with `PRAGMA foreign_keys = ON`, since SQLite does not enforce them by default.
 
-`product_batches.current_status` has a default of `CREATED` but is not yet constrained to a value list, because the status lifecycle belongs to a later user story. Registration sets it to `Registered`.
+`product_batches.current_status` has a default of `CREATED` and no database CHECK constraint. The status lifecycle is enforced in code instead: `app/models/shipment.py` defines the shipment transitions and `app/models/receipt.py` defines the receipt rule, and both are checked inside the transaction that writes the change. Registration sets it to `Registered`.
 
 ### Schema upgrades (BPT-003)
 
@@ -115,7 +115,7 @@ Both steps are idempotent, and an interrupted upgrade completes on the next `ini
 - **Backfill:** `migrations.backfill_batch_ids` runs in `init_db` after the schema step. It assigns an ID only to batches that have none, in one transaction, and it is safe to repeat.
 - **Tracking URL:** `{TRACKING_BASE_URL}/track/{batch ID}`, built in `services/qr_service.py`. `TRACKING_BASE_URL` (default `http://localhost:5173`) is validated at startup.
 - **QR code:** PNG, error-correction level M, generated on request by `segno` and served from `GET /api/batches/<id>/qr.png` to the owning farmer only. Nothing is stored. The image encodes only the tracking URL.
-- **Frontend:** `BatchQrCode` shows the image, the tracking URL and a download link. `BatchDetails` shows the batch ID. `BatchList` shows the ID and opens a batch's QR code.
+- **Frontend:** `BatchQrCode` shows the image, the tracking URL, a **Download QR code (PNG)** button and a **Copy tracking link** button, each with a result message. `BatchDetails` shows the batch ID. `BatchList` shows the ID, opens a batch's QR code and its history.
 - **Scope:** the `/track/<batch ID>` page is the public consumer page of US-08 (section 5h).
 
 ## 5d. Local hash-linked ledger (US-04)
@@ -168,7 +168,6 @@ Both steps are idempotent, and an interrupted upgrade completes on the next `ini
 
 ## 6. Planned extensions (not in this foundation)
 
-- **QR codes:** the Python `qrcode` library will generate codes that reference a batch.
 - **Feature APIs:** new blueprints under `app/routes/` with matching services; the frontend adds pages and service modules alongside the existing ones.
 
 ## 7. Known limitations

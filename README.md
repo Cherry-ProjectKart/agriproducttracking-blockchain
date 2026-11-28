@@ -2,6 +2,8 @@
 
 A blockchain-enabled system for tracing agricultural products from farm to retail. Every supply-chain event is recorded in a tamper-evident ledger so that a product's journey can be verified by farmers, distributors, retailers and consumers.
 
+The ledger is a **local, centralised, SHA-256 hash-linked ledger** stored in one SQLite database. It is a classroom demonstration of tamper evidence, **not a decentralised or public blockchain**: there are no peers, no consensus and no tokens. For the step-by-step college demonstration, see [docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md).
+
 > **Status:** Ledger audit, block explorer and integrity check (BPT-111); Public product journey on the tracking page (BPT-110); Retailer receipt confirmation and batch handover (BPT-109); Ledger integrity and event recording (BPT-108); Distributor shipment lifecycle and movement management (BPT-107); Farmer batch registration and management (BPT-105); user profile and account settings (BPT-104); role-specific workspaces and responsive grids (BPT-103); strict role isolation and protected workspaces (BPT-102); account registration and sign-in (BPT-101), replacing the earlier role selector; consumer QR tracking (BPT-009, US-08) on top of batch history and ledger integrity verification (BPT-008, US-07), retailer receipt confirmation (BPT-007, US-06), distributor shipment updates (BPT-006, US-05), the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001).
 
 ## Technology stack
@@ -12,9 +14,11 @@ A blockchain-enabled system for tracing agricultural products from farm to retai
 | Backend | Python Flask (application factory) |
 | Database | SQLite |
 | API | REST (JSON over HTTP) |
-| Blockchain (future story) | Python local blockchain |
-| Hashing (future story) | SHA-256 |
-| QR codes (future story) | Python `qrcode` |
+| Ledger | Local SHA-256 hash-linked ledger stored in SQLite (a centralised demonstration, not a public blockchain) |
+| Hashing | SHA-256 over canonical JSON (Python `hashlib`) |
+| QR codes | `segno` (pure Python PNG output) |
+| Backend tests | pytest, with `zxing-cpp` to decode the QR images |
+| Frontend tests | Vitest with Testing Library (jsdom) |
 
 See [docs/architecture.md](docs/architecture.md) for the system design.
 
@@ -116,6 +120,8 @@ Health endpoint: `GET http://127.0.0.1:5000/api/health`
 
 - `200` with `"status": "ok"` when the API is running and the database schema is present.
 - `503` with `"status": "degraded"` when the database file or schema is missing (run `init_db.py`).
+
+For the step-by-step college demonstration (accounts, the demo flow, expected results and troubleshooting), see [docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md).
 
 ## Accounts, sign-in and demo access (BPT-101)
 
@@ -276,7 +282,7 @@ SQLite cannot drop a `NOT NULL` constraint in place, so the upgrade rebuilds `pr
 
 ### Limitations
 
-- The farmer's list is the only batch view. Distributor and Retailer lists belong to later stories.
+- The batch registration section describes the farmer's view only. The Distributor, Retailer, public tracking and ledger views are described in their own sections below.
 - The role check follows the BPT-002 demo model. It is not authentication (see Demo role access).
 
 ## Batch IDs and QR codes (US-03)

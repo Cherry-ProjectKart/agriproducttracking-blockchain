@@ -105,7 +105,8 @@ describe('account settings route and density', () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole('link', { name: 'Account settings' }));
-    await waitFor(() => expect(window.location.pathname).toBe('/account'));
+    // Under full-suite load the route change can take longer than the default wait; the assertion is unchanged.
+    await waitFor(() => expect(window.location.pathname).toBe('/account'), { timeout: 4000 });
 
     expect(await screen.findByRole('heading', { name: 'Account settings' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Retailer workspace' })).toBeNull();

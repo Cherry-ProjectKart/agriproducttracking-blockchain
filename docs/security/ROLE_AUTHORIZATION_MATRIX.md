@@ -119,8 +119,8 @@ Role checks run before body validation, so a refused role gets 403 whatever it s
 
 ## 9. Known limitations and differences from the policy as written
 
-1. **Shipment batch list.** The matrix says "View eligible shipment batches". The endpoint returns every registered batch, without filtering by status. The distributor can therefore see batches that are not yet shippable. This is the behaviour from BPT-006 and is unchanged.
-2. **Shipment status transitions.** The matrix does not cover them. A distributor can record any of the three statuses in any order (BPT-006 has no transition rules). Tracked separately.
+1. **Shipment batch list.** The matrix says "View eligible shipment batches". The endpoint returns every registered batch, with the statuses each may move to next (`next_statuses`, BPT-107). A batch with no next movement is listed but cannot be selected or moved.
+2. **Shipment status transitions.** The matrix does not cover them. The lifecycle is enforced on the server (BPT-107): a distributor may only move a batch to the next status, and an out-of-sequence, repeated or post-receipt movement returns `409`. The matrix's role rules are unchanged.
 3. **Receipt list.** `/api/receipts/awaiting` lists every batch with status `Delivered to Retailer`, for any retailer. Ownership does not apply to retailers in the business rules.
 4. **Ledger and history for signed-in roles.** The matrix does not list them. They are open to all three signed-in roles, as BPT-005 and BPT-008 specify.
 5. **Frontend tests are not browser E2E.** `App.guards.test.jsx` runs the real application shell with mocked API services. The authorization matrix tests run the real Flask app through its test client. Neither is a browser end-to-end test. Browser behaviour was checked manually during BPT-101; there is no automated browser test suite in the repository.
