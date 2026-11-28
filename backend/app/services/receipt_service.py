@@ -34,9 +34,21 @@ class ReceiptConflictError(Exception):
     """Raised when a submission key was already used for a different batch."""
 
 
+# delivered_at is the time of the distributor's "Delivered to Retailer" movement, read from the
+# stored event. Nothing is estimated.
 _AWAITING_COLUMNS = (
     "b.batch_code AS batch_id, b.product_name, b.origin, b.quantity, b.unit, "
-    "b.harvest_date, b.current_status, b.created_at"
+    "b.harvest_date, b.current_status, b.created_at, "
+    "(SELECT MAX(e.event_timestamp) FROM supply_chain_events e WHERE e.batch_id = b.id "
+    f"AND e.event_type = 'SHIPMENT_UPDATED' AND e.status = '{AWAITING_RECEIPT_STATUS}') AS delivered_at"
+)
+
+# received_at is the time of the stored RECEIPT_CONFIRMED event for the batch.
+_RECEIVED_COLUMNS = (
+    "b.batch_code AS batch_id, b.product_name, b.origin, b.quantity, b.unit, "
+    "b.harvest_date, b.current_status, b.created_at, "
+    "(SELECT MAX(e.event_timestamp) FROM supply_chain_events e WHERE e.batch_id = b.id "
+    f"AND e.event_type = '{RECEIPT_EVENT_TYPE}') AS received_at"
 )
 
 
@@ -60,6 +72,20 @@ def list_awaiting_receipt(conn: sqlite3.Connection) -> list[dict[str, Any]]:
         ORDER BY b.created_at ASC, b.id ASC
         """,
         (AWAITING_RECEIPT_STATUS,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_received(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Batches already received by a retailer, most recent receipt first. No farmer identity is included."""
+    rows = conn.execute(
+        f"""
+        SELECT {_RECEIVED_COLUMNS}
+        FROM product_batches b
+        WHERE b.batch_code IS NOT NULL AND b.current_status = ?
+        ORDER BY received_at DESC, b.id DESC
+        """,
+        (RECEIVED_STATUS,),
     ).fetchall()
     return [dict(row) for row in rows]
 
@@ -117,15 +143,19 @@ def confirm_receipt(
     is not awaiting receipt (including an already received batch), and ReceiptConflictError when the
     key was used for a different batch.
     """
-    existing = _find_receipt_by_key(conn, submission_key)
-    if existing is not None:
-        if existing["batch_id"] != batch_id:
-            raise ReceiptConflictError("This submission key was already used for a different batch.")
-        return _receipt_response(conn, existing["event_id"]), False
-
     try:
+        # The key is checked inside the write transaction. A retry that arrives while the original
+        # request is committing then sees the stored receipt, instead of finding the batch already
+        # received and being refused.
         if not conn.in_transaction:
             conn.execute("BEGIN IMMEDIATE")
+        existing = _find_receipt_by_key(conn, submission_key)
+        if existing is not None:
+            if existing["batch_id"] != batch_id:
+                raise ReceiptConflictError("This submission key was already used for a different batch.")
+            conn.commit()
+            return _receipt_response(conn, existing["event_id"]), False
+
         batch = conn.execute(
             "SELECT id, batch_code, current_status FROM product_batches WHERE batch_code = ?", (batch_id,)
         ).fetchone()

@@ -16,6 +16,7 @@ vi.mock('./services/accessService.js', async (importOriginal) => ({
 }));
 
 vi.mock('./services/receiptService.js', () => ({
+  fetchReceivedReceipts: vi.fn().mockResolvedValue([]),
   fetchAwaitingReceipts: vi.fn(),
   confirmReceipt: vi.fn(),
 }));

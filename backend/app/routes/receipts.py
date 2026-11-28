@@ -22,6 +22,7 @@ from app.services.receipt_service import (
     ReceiptNotAllowedError,
     confirm_receipt,
     list_awaiting_receipt,
+    list_received,
     retailer_exists,
 )
 
@@ -47,6 +48,13 @@ def _submission_key() -> str:
             "so that a repeated confirmation is not recorded twice.",
         )
     return key
+
+
+@receipts_bp.get("/receipts/received")
+@require_role("retailer")
+def received_receipts():
+    _active_retailer_ok()
+    return jsonify({"batches": list_received(get_db())}), 200
 
 
 @receipts_bp.get("/receipts/awaiting")
