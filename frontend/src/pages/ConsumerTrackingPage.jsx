@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react';
 import { ApiError } from '../services/apiClient.js';
 import { fetchPublicTracking } from '../services/trackingService.js';
-import { formatTimestamp } from '../components/batches/batchFormatters.js';
+import { formatQuantity, formatTimestamp } from '../components/batches/batchFormatters.js';
+import {
+  MILESTONE_STATES,
+  buildMilestones,
+  eventTitle,
+  latestUpdate,
+  receiptSummary,
+} from '../utils/productJourney.js';
 
 const KIND_LABELS = {
   PRODUCT_REGISTERED: 'Registration',
@@ -102,29 +109,134 @@ export default function ConsumerTrackingPage({ batchId }) {
   );
 }
 
+const STATE_LABELS = {
+  completed: 'Completed',
+  current: 'Current',
+  pending: 'Not yet recorded',
+};
+
+const STATE_MARKS = {
+  completed: '✓',
+  current: '●',
+  pending: '○',
+};
+
 function TrackingRecord({ data }) {
   const { batch, events } = data;
+  const milestones = buildMilestones(batch.current_status, events);
+  const latest = latestUpdate(events);
+  const receipt = receiptSummary(events);
+  const hasCurrentMilestone = milestones.some((milestone) => milestone.state === MILESTONE_STATES.CURRENT);
 
   return (
     <article className="tracking-record" aria-labelledby="tracking-product-heading">
-      <p className="tracking-eyebrow">Batch ID</p>
-      <p className="tracking-batch-id">{batch.batch_id}</p>
-      <h1 id="tracking-product-heading" className="tracking-product">
-        {batch.product_name}
-      </h1>
+      <section className="tracking-overview" aria-labelledby="tracking-overview-heading">
+        <h2 id="tracking-overview-heading" className="visually-hidden">
+          Product overview
+        </h2>
+        <p className="tracking-eyebrow">Batch ID</p>
+        <p className="tracking-batch-id">{batch.batch_id}</p>
+        <h1 id="tracking-product-heading" className="tracking-product">
+          {batch.product_name}
+        </h1>
+        {batch.description ? <p className="tracking-description">{batch.description}</p> : null}
 
-      <dl className="tracking-facts">
-        <div>
-          <dt>Origin or farm location</dt>
-          <dd>{batch.origin}</dd>
-        </div>
-        <div>
-          <dt>Current status</dt>
-          <dd>
-            <span className="tracking-status-pill">{batch.current_status}</span>
-          </dd>
-        </div>
-      </dl>
+        <dl className="tracking-facts">
+          <div>
+            <dt>Current status</dt>
+            <dd>
+              <span className="tracking-status-pill">{batch.current_status}</span>
+            </dd>
+          </div>
+          <div>
+            <dt>Quantity</dt>
+            <dd>{formatQuantity(batch.quantity, batch.unit)}</dd>
+          </div>
+          <div>
+            <dt>Origin or farm location</dt>
+            <dd>{batch.origin}</dd>
+          </div>
+          {batch.harvest_date ? (
+            <div>
+              <dt>Harvest date</dt>
+              <dd>{batch.harvest_date}</dd>
+            </div>
+          ) : null}
+          <div>
+            <dt>Latest recorded update</dt>
+            <dd>
+              {latest ? <time dateTime={latest}>{formatTimestamp(latest)}</time> : 'No update recorded yet'}
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <section className="tracking-progress-section" aria-labelledby="tracking-progress-heading">
+        <h2 id="tracking-progress-heading">Where the product stands</h2>
+        <ol className="tracking-progress" aria-label="Progress through the supply chain">
+          {milestones.map((milestone) => (
+            <li
+              key={milestone.key}
+              className={`tracking-milestone tracking-milestone--${milestone.state}`}
+              data-milestone={milestone.key}
+              data-state={milestone.state}
+            >
+              <span className="tracking-milestone__mark" aria-hidden="true">
+                {STATE_MARKS[milestone.state]}
+              </span>
+              <span className="tracking-milestone__title">{milestone.title}</span>
+              <span className="tracking-milestone__state">{STATE_LABELS[milestone.state]}</span>
+              {milestone.firstTimestamp ? (
+                <time dateTime={milestone.firstTimestamp} className="tracking-milestone__time">
+                  {formatTimestamp(milestone.firstTimestamp)}
+                </time>
+              ) : null}
+            </li>
+          ))}
+        </ol>
+        {!hasCurrentMilestone ? (
+          <p className="tracking-progress__note">
+            The latest recorded status is <strong>{batch.current_status}</strong>, which is not one of the standard
+            steps.
+          </p>
+        ) : null}
+      </section>
+
+      <section className="tracking-handover" aria-labelledby="tracking-handover-heading">
+        <h2 id="tracking-handover-heading">Retailer receipt and handover</h2>
+        {receipt ? (
+          <dl className="tracking-facts">
+            <div>
+              <dt>Receipt confirmed</dt>
+              <dd>
+                <time dateTime={receipt.timestamp}>{formatTimestamp(receipt.timestamp)}</time>
+              </dd>
+            </div>
+            <div>
+              <dt>Confirmed by</dt>
+              <dd>{receipt.confirmedBy}</dd>
+            </div>
+            <div>
+              <dt>Final status</dt>
+              <dd>{receipt.status}</dd>
+            </div>
+            {receipt.ledgerBlockIndex !== null ? (
+              <div>
+                <dt>Ledger block</dt>
+                <dd>Block {receipt.ledgerBlockIndex}</dd>
+              </div>
+            ) : null}
+          </dl>
+        ) : batch.current_status === 'Delivered to Retailer' ? (
+          <p className="tracking-handover__pending">
+            Delivered to the retailer. Awaiting the retailer&apos;s confirmation of receipt.
+          </p>
+        ) : (
+          <p className="tracking-handover__pending">
+            Not yet delivered to a retailer. Receipt has not been confirmed.
+          </p>
+        )}
+      </section>
 
       <section className="tracking-journey" aria-labelledby="tracking-journey-heading">
         <h2 id="tracking-journey-heading">Journey</h2>
@@ -132,40 +244,46 @@ function TrackingRecord({ data }) {
           <p>No events have been recorded for this batch yet.</p>
         ) : (
           <ol className="tracking-timeline" aria-label={`Recorded journey of batch ${batch.batch_id}`}>
-            {events.map((event, position) => (
-              <li key={`${event.timestamp}-${position}`} className="tracking-step" data-event-type={event.event_type}>
-                <div className="tracking-step__head">
-                  <span className={`tracking-kind ${KIND_CLASSES[event.event_type] ?? ''}`}>
-                    {KIND_LABELS[event.event_type] ?? event.label}
-                  </span>
-                  <time dateTime={event.timestamp} className="tracking-step__time">
-                    {formatTimestamp(event.timestamp)}
-                  </time>
-                </div>
-                <dl className="tracking-step__details">
-                  <div>
-                    <dt>Recorded by</dt>
-                    <dd>{event.actor_role}</dd>
+            {events.map((event, position) => {
+              const { title, role } = eventTitle(event);
+              return (
+                <li key={`${event.timestamp}-${position}`} className="tracking-step" data-event-type={event.event_type}>
+                  <div className="tracking-step__head">
+                    <span className={`tracking-kind ${KIND_CLASSES[event.event_type] ?? ''}`}>
+                      {KIND_LABELS[event.event_type] ?? event.label}
+                    </span>
+                    <time dateTime={event.timestamp} className="tracking-step__time">
+                      {formatTimestamp(event.timestamp)}
+                    </time>
                   </div>
-                  <div>
-                    <dt>Status</dt>
-                    <dd>{event.status}</dd>
-                  </div>
-                  {event.note ? (
-                    <div className="tracking-step__note">
-                      <dt>Note</dt>
-                      <dd>{event.note}</dd>
-                    </div>
-                  ) : null}
-                  {event.ledger_block_index !== null && event.ledger_block_index !== undefined ? (
+                  <p className="tracking-step__title">
+                    {title} <span className="tracking-step__role">by {role}</span>
+                  </p>
+                  <dl className="tracking-step__details">
                     <div>
-                      <dt>Ledger block</dt>
-                      <dd>Block {event.ledger_block_index}</dd>
+                      <dt>Recorded by</dt>
+                      <dd>{event.actor_role}</dd>
                     </div>
-                  ) : null}
-                </dl>
-              </li>
-            ))}
+                    <div>
+                      <dt>Status</dt>
+                      <dd>{event.status}</dd>
+                    </div>
+                    {event.note ? (
+                      <div className="tracking-step__note">
+                        <dt>Note</dt>
+                        <dd>{event.note}</dd>
+                      </div>
+                    ) : null}
+                    {event.ledger_block_index !== null && event.ledger_block_index !== undefined ? (
+                      <div>
+                        <dt>Ledger block</dt>
+                        <dd>Block {event.ledger_block_index}</dd>
+                      </div>
+                    ) : null}
+                  </dl>
+                </li>
+              );
+            })}
           </ol>
         )}
       </section>

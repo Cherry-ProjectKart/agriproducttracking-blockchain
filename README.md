@@ -2,7 +2,7 @@
 
 A blockchain-enabled system for tracing agricultural products from farm to retail. Every supply-chain event is recorded in a tamper-evident ledger so that a product's journey can be verified by farmers, distributors, retailers and consumers.
 
-> **Status:** Retailer receipt confirmation and batch handover (BPT-109); Ledger integrity and event recording (BPT-108); Distributor shipment lifecycle and movement management (BPT-107); Farmer batch registration and management (BPT-105); user profile and account settings (BPT-104); role-specific workspaces and responsive grids (BPT-103); strict role isolation and protected workspaces (BPT-102); account registration and sign-in (BPT-101), replacing the earlier role selector; consumer QR tracking (BPT-009, US-08) on top of batch history and ledger integrity verification (BPT-008, US-07), retailer receipt confirmation (BPT-007, US-06), distributor shipment updates (BPT-006, US-05), the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001).
+> **Status:** Public product journey on the tracking page (BPT-110); Retailer receipt confirmation and batch handover (BPT-109); Ledger integrity and event recording (BPT-108); Distributor shipment lifecycle and movement management (BPT-107); Farmer batch registration and management (BPT-105); user profile and account settings (BPT-104); role-specific workspaces and responsive grids (BPT-103); strict role isolation and protected workspaces (BPT-102); account registration and sign-in (BPT-101), replacing the earlier role selector; consumer QR tracking (BPT-009, US-08) on top of batch history and ledger integrity verification (BPT-008, US-07), retailer receipt confirmation (BPT-007, US-06), distributor shipment updates (BPT-006, US-05), the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001).
 
 ## Technology stack
 
@@ -804,6 +804,30 @@ The page shows:
 
 The page sets the browser title to `Batch <ID> · Product tracking`. It is designed for phone screens first and widens on larger screens.
 
+### Complete product journey (BPT-110)
+
+The tracking page is the consumer's view of one batch. Anyone can open it from the QR code or the link, with no login and no account.
+
+**How the QR code opens it.** The QR code encodes `{TRACKING_BASE_URL}/track/<batch ID>`. Opening that address loads the page, which reads `GET /api/tracking/<batch ID>`. An unknown ID shows *We could not find this batch*; a malformed ID shows *This is not a valid batch code*; an unreachable server shows a connection message. The same address is used by the QR code, the link on the farmer's and distributor's pages, and any printed label, so existing codes keep working.
+
+**What the page shows**
+
+1. **Product overview:** the batch ID, product name, description (when one was entered), quantity and unit, origin, harvest date (when recorded), the current status, and the time of the latest recorded update.
+2. **Where the product stands:** the five steps of the supply chain, each marked **Completed**, **Current** or **Not yet recorded**, with the time it was first recorded. The steps are *Registered*, *Shipment initiated*, *In transit*, *Delivered to retailer* and *Received by retailer*.
+3. **Retailer receipt and handover:** when the receipt has been recorded, its time, the confirming party (Retailer), the final status and the ledger block. Before that, the page says whether the product is awaiting the retailer's confirmation or has not yet reached a retailer.
+4. **Journey:** every recorded event in chronological order, each with its title (for example *Shipment initiated by Distributor*), the role that recorded it, its status, any note, and its ledger block.
+
+**How the journey is assembled.** The backend returns only the events that were recorded for the batch: registration, shipment movements and receipt. The page does not invent a milestone or a time. A step counts as *Completed* only when its event exists. The current step is the one that matches the batch's current status. If a step was skipped in the records (for example a batch recorded as delivered without a shipment step), that step stays *Not yet recorded*, and the page shows only what was recorded. A status outside the supply-chain steps is shown as the latest recorded status with a short note.
+
+**What stays private.** The public response contains no user names, account identifiers, passwords, session data, creator fields or internal row IDs. The page sends no session request and makes no request other than reading the tracking record. It has no buttons, forms or inputs, so a consumer cannot change the batch, a shipment, a receipt or the ledger. Public reads write nothing (tested).
+
+**Limitations**
+
+- The description is shown publicly. A description the farmer edits later changes what consumers see; the events and the ledger do not change.
+- Shipment steps show the statuses and times that were recorded. There is no location for a shipment because the application does not record one.
+- The page reads the local demonstration database. It is not a public blockchain and does not prove that the product information was true when it was recorded.
+- The page is designed for a phone on the same network as the computer running the demo (see *Scanning from another device on the same network*); it is not deployed to the internet.
+
 ### Public tracking endpoint
 
 | Method | Path | Access | Description |
@@ -814,7 +838,7 @@ Response:
 
 ```json
 {
-  "batch": {"batch_id": "PB-7K2M-9QXD", "product_name": "Organic Tomatoes", "origin": "Hill Top Farm, Plot 2", "current_status": "Received by Retailer"},
+  "batch": {"batch_id": "PB-7K2M-9QXD", "product_name": "Organic Tomatoes", "description": "Vine-ripened, hand-picked.", "quantity": 45.5, "unit": "kg", "origin": "Hill Top Farm, Plot 2", "harvest_date": "2026-10-02", "current_status": "Received by Retailer"},
   "count": 4,
   "events": [
     {"event_type": "PRODUCT_REGISTERED", "label": "Registration", "actor_role": "farmer", "status": "Registered", "note": null, "timestamp": "2026-11-26T17:52:00.787Z", "ledger_block_index": 19}
@@ -824,7 +848,7 @@ Response:
 
 The endpoint reuses the batch history service from BPT-008 and keeps only the fields above. It sets `Cache-Control: no-store`, sets no cookie, and accepts only `GET` (other methods return `405`).
 
-**Exposed:** the batch ID, product name, origin, current status, and for each event its type, label, actor role, status, note, timestamp and ledger block index.
+**Exposed:** the batch ID, product name, description (when one was entered), quantity and unit, origin, harvest date and current status; and for each event its type, label, actor role, status, note, timestamp and ledger block index. Adding the product facts (description, quantity, unit, harvest date) is the BPT-110 change; the other fields were already public.
 
 **Not exposed:** the farmer's or any user's identity or ID, session data, tokens, secrets, the internal row IDs of batches and events, request keys, the ledger hashes and payloads, or any other database record. This list is enforced by a test that checks the response keys and the text of the response.
 
