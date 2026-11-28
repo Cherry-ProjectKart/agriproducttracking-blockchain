@@ -2,9 +2,8 @@ import { useEffect, useState } from 'react';
 import FarmerBatchPanel from '../components/batches/FarmerBatchPanel.jsx';
 import DistributorShipmentPanel from '../components/shipments/DistributorShipmentPanel.jsx';
 import RetailerReceiptPanel from '../components/receipts/RetailerReceiptPanel.jsx';
-import LedgerView from '../components/ledger/LedgerView.jsx';
+import LedgerAudit from '../components/ledger/LedgerAudit.jsx';
 import BatchHistoryPanel from '../components/history/BatchHistoryPanel.jsx';
-import LedgerVerificationPanel from '../components/history/LedgerVerificationPanel.jsx';
 import { fetchRoleActions } from '../services/accessService.js';
 import { navigationForRole } from '../utils/roleNavigation.js';
 
@@ -111,9 +110,8 @@ export default function RoleWorkspacePage({ role, roleLabel, roleDescription }) 
       <div id="batch-history">
         <BatchHistoryPanel request={historyRequest} />
       </div>
-      <LedgerVerificationPanel />
       <div id="ledger">
-        <LedgerView />
+        <LedgerAudit />
       </div>
     </section>
   );
