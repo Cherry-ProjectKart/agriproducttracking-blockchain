@@ -640,6 +640,85 @@ body {
   }
 }
 
+/* BPT-111: ledger overview, block details and audit verdicts */
+.ledger-overview__stats,
+.ledger-detail__facts,
+.ledger-detail__hashes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.6rem;
+  margin: 0.5rem 0 0;
+}
+
+.ledger-overview__stats > div,
+.ledger-detail__facts > div,
+.ledger-detail__hashes > div {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: #ffffff;
+  padding: 0.6rem 0.75rem;
+  min-width: 0;
+}
+
+.ledger-overview__stats dt,
+.ledger-detail__facts dt,
+.ledger-detail__hashes dt {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+  margin-bottom: 0.25rem;
+}
+
+.ledger-overview__stats dd,
+.ledger-detail__facts dd,
+.ledger-detail__hashes dd {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.ledger-overview__sub {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
+.ledger-overview__verdict {
+  font-weight: 700;
+}
+
+.ledger-overview__verdict--valid {
+  color: #166534;
+}
+
+.ledger-overview__verdict--invalid {
+  color: #b91c1c;
+}
+
+.ledger-detail {
+  margin-top: 1rem;
+}
+
+.ledger-detail__summary,
+.ledger-detail__link {
+  margin: 0.5rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.ledger-detail__nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.verdict__note {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.9rem;
+}
+
 /* BPT-108: ledger block count and hash copy */
 .ledger__count {
   margin: 0 0 0.5rem;

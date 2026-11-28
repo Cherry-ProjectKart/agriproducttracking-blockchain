@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { fetchLedger } from '../../services/ledgerService.js';
 import { formatTimestamp } from '../batches/batchFormatters.js';
 import { copyText } from '../../utils/clipboard.js';
+import { EVENT_LABELS } from '../../utils/ledgerDisplay.js';
+import LedgerBlockDetail from './LedgerBlockDetail.jsx';
 
 const LOAD_ERROR = 'Could not load the ledger. Make sure the backend is running.';
 
@@ -27,19 +29,13 @@ function HashCell({ value, label }) {
   );
 }
 
-const EVENT_LABELS = {
-  GENESIS: 'Ledger start',
-  PRODUCT_REGISTERED: 'Product registered',
-  SHIPMENT_UPDATED: 'Shipment updated',
-  RECEIPT_CONFIRMED: 'Receipt confirmed',
-};
-
 /**
  * Read-only view of the local hash-linked ledger (US-04). Each block shows its index, time,
  * event, batch ID and the two SHA-256 hashes that link it to the chain.
  */
 export default function LedgerView() {
   const [state, setState] = useState({ status: 'loading', blocks: [] });
+  const [selected, setSelected] = useState(null);
 
   const load = useCallback(async (signal) => {
     setState((current) => ({ ...current, status: 'loading' }));
@@ -51,6 +47,8 @@ export default function LedgerView() {
       setState({ status: 'error', blocks: [] });
     }
   }, []);
+
+  const selectedPosition = selected === null ? -1 : state.blocks.findIndex((block) => block.index === selected);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -94,6 +92,7 @@ export default function LedgerView() {
                 <th scope="col">Batch ID</th>
                 <th scope="col">Previous hash</th>
                 <th scope="col">Block hash</th>
+                <th scope="col">Details</th>
               </tr>
             </thead>
             <tbody>
@@ -109,11 +108,30 @@ export default function LedgerView() {
                   <td>
                     <HashCell value={block.block_hash} label={`block hash of block ${block.index}`} />
                   </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="btn btn--small btn--secondary"
+                      onClick={() => setSelected(block.index)}
+                      aria-label={`Show details for block ${block.index}`}
+                      aria-pressed={selected === block.index}
+                    >
+                      Details
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      ) : null}
+      {state.status === 'ready' && selectedPosition >= 0 ? (
+        <LedgerBlockDetail
+          block={state.blocks[selectedPosition]}
+          previousBlock={selectedPosition > 0 ? state.blocks[selectedPosition - 1] : null}
+          nextBlock={selectedPosition < state.blocks.length - 1 ? state.blocks[selectedPosition + 1] : null}
+          onSelect={setSelected}
+        />
       ) : null}
     </section>
   );

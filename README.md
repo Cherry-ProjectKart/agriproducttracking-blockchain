@@ -2,7 +2,7 @@
 
 A blockchain-enabled system for tracing agricultural products from farm to retail. Every supply-chain event is recorded in a tamper-evident ledger so that a product's journey can be verified by farmers, distributors, retailers and consumers.
 
-> **Status:** Public product journey on the tracking page (BPT-110); Retailer receipt confirmation and batch handover (BPT-109); Ledger integrity and event recording (BPT-108); Distributor shipment lifecycle and movement management (BPT-107); Farmer batch registration and management (BPT-105); user profile and account settings (BPT-104); role-specific workspaces and responsive grids (BPT-103); strict role isolation and protected workspaces (BPT-102); account registration and sign-in (BPT-101), replacing the earlier role selector; consumer QR tracking (BPT-009, US-08) on top of batch history and ledger integrity verification (BPT-008, US-07), retailer receipt confirmation (BPT-007, US-06), distributor shipment updates (BPT-006, US-05), the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001).
+> **Status:** Ledger audit, block explorer and integrity check (BPT-111); Public product journey on the tracking page (BPT-110); Retailer receipt confirmation and batch handover (BPT-109); Ledger integrity and event recording (BPT-108); Distributor shipment lifecycle and movement management (BPT-107); Farmer batch registration and management (BPT-105); user profile and account settings (BPT-104); role-specific workspaces and responsive grids (BPT-103); strict role isolation and protected workspaces (BPT-102); account registration and sign-in (BPT-101), replacing the earlier role selector; consumer QR tracking (BPT-009, US-08) on top of batch history and ledger integrity verification (BPT-008, US-07), retailer receipt confirmation (BPT-007, US-06), distributor shipment updates (BPT-006, US-05), the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001).
 
 ## Technology stack
 
@@ -708,6 +708,96 @@ What these prove: a change to recorded data, to a link, or to the events that de
 ### Historical data
 
 BPT-108 added no database migration and changed no existing block. Registrations made before this story keep their stored timestamps and hashes. On a copy of the demonstration database, the verifier reports the existing 14 blocks as valid under the new checks.
+
+## Ledger audit: overview, block explorer and integrity check (BPT-111)
+
+Every signed-in demonstration role (Farmer, Distributor, Retailer) can open the **Ledger** section of its workspace. It has three parts, in this order.
+
+### Important: what kind of ledger this is
+
+The application uses a **locally stored, centralised, hash-linked ledger**. It is one table in the demonstration database. It is **not a decentralised or public blockchain**: there are no peers, no consensus and no tokens.
+
+Hash verification can show that the recorded blocks are inconsistent or have changed relative to the chain as stored. It does **not** prove that product information was truthful when it was entered. Someone who controls the database may be able to rebuild a consistent chain.
+
+### 1. Ledger overview
+
+The overview is computed from the blocks the ledger returns. Nothing in it is typed in or stored separately.
+
+| Statistic | Source |
+|---|---|
+| Blocks in the chain | number of stored blocks |
+| Latest block | the block with the highest index, and its timestamp |
+| Recorded events | blocks that reference a supply-chain event (every block except the genesis block) |
+| Genesis block | block 0, its timestamp and a shortened hash (the full hash is in the block detail) |
+| Chain verification | *Valid* or *Invalid* from the last integrity check run in this view, otherwise *Not checked yet* |
+| Integrity failures found | the number of failures from that check, otherwise *Not checked yet* |
+
+### 2. Block history and block details
+
+Each row of the block table shows the block index, timestamp (UTC), event, the batch ID, the previous hash and the block hash. Both hashes are shown in full and can be copied.
+
+Select **Details** on a row to open the block. The detail explains:
+
+- **the event**: what was recorded and for which batch;
+- **when**: the recorded time;
+- **who**: the role that recorded it (Farmer, Distributor or Retailer);
+- **what was recorded**: the status, note, product facts or event time that the block stores;
+- **the hashes**: the previous hash and this block's hash, in full, each with a copy button;
+- **the link**: whether the previous hash matches the block hash stored in the block before it, or that this is the genesis block.
+
+**Previous** and **Next** move to the neighbouring blocks. The link statement is worked out from the blocks already shown, so it is a quick reading aid. The integrity check below is the authoritative test: it recalculates every hash.
+
+### 3. Integrity check
+
+Select **Verify ledger**. The check recalculates every block hash from the stored contents and checks each link, the event references and the event records. Each of the eleven checks is listed as *Passed* or *Failed*.
+
+- **Valid:** the verdict says every block passed every check, with the number of blocks and *no integrity failures were found*.
+- **Invalid:** the verdict reads *Integrity failure detected*, with the number of failures and the first failing block. Each failure names the block (or *Ledger-wide*), the check and a reason.
+
+A check never changes the ledger. An invalid result is shown as it is: nothing is repaired, rebuilt or rewritten, and the page says so.
+
+Error states are shown without internal details: if the check cannot be completed, the page says so and suggests trying again or checking that the backend is running.
+
+### Access
+
+- The ledger, its blocks and the integrity check require a signed-in demonstration session. Without one the API returns `401`.
+- Every demonstration role can read them. No role can write to the ledger through the API.
+- The public tracking page (`/track/<batch ID>`) is separate, needs no login, and does not show the ledger.
+- The ledger responses contain no account names, passwords, session data or creator fields.
+
+### API used by the audit view
+
+| Method | Path | Access | Purpose |
+|---|---|---|---|
+| GET | `/api/ledger` | any signed-in role | all blocks in index order, the count and the latest block |
+| GET | `/api/ledger/blocks/<index>` | any signed-in role | one block |
+| GET | `/api/ledger/latest` | any signed-in role | the latest block |
+| GET | `/api/ledger/verify` | any signed-in role | the integrity check; read-only |
+
+No endpoint was added or changed for BPT-111.
+
+### Inspecting the ledger yourself
+
+1. Start the backend and frontend (see *Running the application*) and sign in with any demonstration account.
+2. Open the workspace and scroll to **Ledger**. Read the overview.
+3. Select **Details** on a block to read what it records and how it links to the one before.
+4. Select **Verify ledger**. A valid result confirms the stored chain is consistent. Nothing is changed.
+5. To see the automated tampering tests, run `python -m pytest tests/test_ledger_audit.py tests/test_ledger_integrity.py -q` from `backend/`. Each test changes only a temporary database.
+
+### Tampering detection and its limits
+
+The integrity tests change temporary copies of the chain in these ways, and check that the verifier reports each one: an altered block hash, a changed previous hash, a deleted block, a removed or missing event reference, a duplicated event reference, an event record that no longer matches its block, and an altered payload. A block edited with every later hash recalculated is still caught, because the event record keeps the original values.
+
+What the tests do **not** prove: that someone who rewrites every block *and* every matching event record produces a chain that fails verification. Only an external anchor, such as a hash published elsewhere, could reveal that, and this demonstration has none.
+
+### Limitations
+
+- Centralised and local: one database, one application. Whoever controls the database can rebuild a consistent chain.
+- Hashes detect changes to recorded data; they do not prevent them, and they do not prove that product information was true.
+- Blocks record the role that acted, not the individual user.
+- A removed last block is caught only through its missing event, not through the chain itself.
+- The block list loads every block at once; this is fine for a demonstration and would need paging for a large ledger.
+- The audit view links to the batch history through the existing batch history section; it does not open a separate audit log.
 
 ## Batch history and ledger integrity (US-07)
 

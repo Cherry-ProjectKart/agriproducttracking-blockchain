@@ -10,7 +10,7 @@ const SERVER_ERROR = 'Verification could not be completed. Please try again.';
  * Runs the independent ledger check on the server and shows the outcome. Valid or Invalid is shown only
  * after the backend has returned its result. Verification changes nothing.
  */
-export default function LedgerVerificationPanel() {
+export default function LedgerVerificationPanel({ onResult = null }) {
   const [state, setState] = useState({ status: 'idle', result: null, error: null });
 
   async function handleVerify() {
@@ -18,6 +18,7 @@ export default function LedgerVerificationPanel() {
     try {
       const result = await verifyLedger();
       setState({ status: 'done', result, error: null });
+      onResult?.(result);
     } catch (error) {
       const message = error instanceof ApiError && error.status === undefined ? NETWORK_ERROR : SERVER_ERROR;
       setState({ status: 'error', result: null, error: message });
@@ -58,12 +59,13 @@ function VerificationResult({ result }) {
     <div className="verification-result">
       {valid ? (
         <div className="verdict verdict--valid" role="status">
-          <strong>Valid</strong> All {result.checked_blocks} blocks passed every check.
+          <strong>Valid</strong> All {result.checked_blocks} blocks passed every check. No integrity failures were found.
         </div>
       ) : (
         <div className="verdict verdict--invalid" role="alert">
-          <strong>Invalid</strong> {result.failures.length} check{result.failures.length === 1 ? '' : 's'} failed.
+          <strong>Invalid</strong> Integrity failure detected: {result.failures.length} failure{result.failures.length === 1 ? '' : 's'} found.
           {result.first_failing_block !== null ? ` The first failing block is block ${result.first_failing_block}.` : ''}
+          <span className="verdict__note"> Verification does not repair or change any record.</span>
         </div>
       )}
 
