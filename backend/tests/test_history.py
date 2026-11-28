@@ -238,7 +238,8 @@ def test_verification_reports_checks_by_name(client, db_path):
 
     assert {check["id"] for check in result["checks"]} == {
         "genesis", "sequence", "canonical_data", "timestamps", "hash_format",
-        "previous_hash_links", "block_hashes", "event_references", "event_coverage",
+        "previous_hash_links", "block_hashes", "event_references", "event_uniqueness",
+        "event_consistency", "event_coverage",
     }
 
 

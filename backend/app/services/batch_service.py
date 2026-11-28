@@ -24,7 +24,7 @@ from app.models.batch import (
     REGISTRATION_EVENT_TYPE,
     UNIT_MAX_LENGTH,
 )
-from app.services.ledger_service import append_block, registration_event_data
+from app.services.ledger_service import append_block, registration_event_data, utc_timestamp
 from app.services.batch_identifiers import (
     MAX_ID_ATTEMPTS,
     BatchIdAllocationError,
@@ -227,12 +227,14 @@ def register_batch(
                 ),
             )
             batch_row_id = cursor.lastrowid
+            # The event and its block share one timestamp, as shipments and receipts already do.
+            timestamp = utc_timestamp()
             event_cursor = conn.execute(
                 """
-                INSERT INTO supply_chain_events (batch_id, event_type, actor_role, status, note)
-                VALUES (?, ?, 'farmer', ?, ?)
+                INSERT INTO supply_chain_events (batch_id, event_type, actor_role, status, note, event_timestamp)
+                VALUES (?, ?, 'farmer', ?, ?, ?)
                 """,
-                (batch_row_id, REGISTRATION_EVENT_TYPE, REGISTERED_STATUS, REGISTRATION_EVENT_NOTE),
+                (batch_row_id, REGISTRATION_EVENT_TYPE, REGISTERED_STATUS, REGISTRATION_EVENT_NOTE, timestamp),
             )
             event_id = event_cursor.lastrowid
             append_block(
@@ -243,6 +245,7 @@ def register_batch(
                     product=clean,
                 ),
                 event_id,
+                timestamp=timestamp,
             )
             conn.commit()
             break

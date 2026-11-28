@@ -1,8 +1,31 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchLedger } from '../../services/ledgerService.js';
 import { formatTimestamp } from '../batches/batchFormatters.js';
+import { copyText } from '../../utils/clipboard.js';
 
 const LOAD_ERROR = 'Could not load the ledger. Make sure the backend is running.';
+
+/** One full hash, shown in full with a copy button so it can be compared with another record. */
+function HashCell({ value, label }) {
+  const [message, setMessage] = useState(null);
+
+  async function copy() {
+    const copied = await copyText(value);
+    setMessage(copied ? 'Copied' : 'Copy failed');
+  }
+
+  return (
+    <div className="hash-cell">
+      <code className="hash">{value}</code>
+      <div className="hash-cell__actions">
+        <button type="button" className="btn btn--small btn--secondary" onClick={copy} aria-label={`Copy ${label}`}>
+          Copy
+        </button>
+        {message ? <span role="status" className="hash-cell__message">{message}</span> : null}
+      </div>
+    </div>
+  );
+}
 
 const EVENT_LABELS = {
   GENESIS: 'Ledger start',
@@ -57,6 +80,9 @@ export default function LedgerView() {
       ) : null}
       {state.status === 'ready' && state.blocks.length === 0 ? <p>The ledger is empty.</p> : null}
       {state.status === 'ready' && state.blocks.length > 0 ? (
+        <p className="ledger__count">Blocks in the chain: {state.blocks.length}</p>
+      ) : null}
+      {state.status === 'ready' && state.blocks.length > 0 ? (
         <div className="table-wrapper">
           <table className="ledger-table">
             <caption className="visually-hidden">Ledger blocks in order</caption>
@@ -78,14 +104,10 @@ export default function LedgerView() {
                   <td>{EVENT_LABELS[block.event_type] ?? block.event_type}</td>
                   <td>{block.batch_id ? <code className="batch-id">{block.batch_id}</code> : '—'}</td>
                   <td>
-                    <code className="hash" title={block.previous_hash}>
-                      {block.previous_hash}
-                    </code>
+                    <HashCell value={block.previous_hash} label={`previous hash of block ${block.index}`} />
                   </td>
                   <td>
-                    <code className="hash" title={block.block_hash}>
-                      {block.block_hash}
-                    </code>
+                    <HashCell value={block.block_hash} label={`block hash of block ${block.index}`} />
                   </td>
                 </tr>
               ))}

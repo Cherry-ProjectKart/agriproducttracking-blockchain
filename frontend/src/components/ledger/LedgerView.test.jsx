@@ -118,3 +118,48 @@ describe('LedgerView', () => {
     expect(screen.getByRole('heading', { name: 'Local ledger' })).toBeTruthy();
   });
 });
+
+describe('LedgerView hashes and count', () => {
+  beforeEach(() => {
+    ledgerService.fetchLedger.mockResolvedValue(ledgerBody([GENESIS, REGISTRATION]));
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+    delete navigator.clipboard;
+  });
+
+  it('shows how many blocks the chain has', async () => {
+    render(<LedgerView />);
+
+    expect(await screen.findByText('Blocks in the chain: 2')).toBeTruthy();
+  });
+
+  it('copies a full block hash with its copy button', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    render(<LedgerView />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy block hash of block 1' }));
+
+    expect(await screen.findByText('Copied')).toBeTruthy();
+    expect(writeText).toHaveBeenCalledWith(REGISTRATION.block_hash);
+  });
+
+  it('reports when the hash cannot be copied', async () => {
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) }, configurable: true });
+    const originalExec = Object.getOwnPropertyDescriptor(document, 'execCommand');
+    Object.defineProperty(document, 'execCommand', { value: vi.fn(() => false), configurable: true, writable: true });
+    try {
+      render(<LedgerView />);
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Copy previous hash of block 1' }));
+
+      expect(await screen.findByText('Copy failed')).toBeTruthy();
+    } finally {
+      if (originalExec) Object.defineProperty(document, 'execCommand', originalExec);
+      else delete document.execCommand;
+    }
+  });
+});

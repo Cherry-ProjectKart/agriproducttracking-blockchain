@@ -14,6 +14,9 @@ Checks, in the order they run:
   previous_hash_links each block's previous hash equals the recalculated hash of the block before it
   block_hashes        each stored block hash equals the recalculated hash
   event_references    a block that names a supply-chain event refers to a real event with the same type, batch and id
+  event_uniqueness    no supply-chain event is referenced by more than one block
+  event_consistency   the block's event data (status, actor, note, timestamp and, for registrations, the
+                      product facts) equals the stored supply-chain event and batch record
   event_coverage      every supported supply-chain event has exactly one block
 """
 
@@ -43,6 +46,8 @@ CHECK_NAMES = {
     "previous_hash_links": "Previous-hash links",
     "block_hashes": "Block hashes recalculated",
     "event_references": "Event references",
+    "event_uniqueness": "Each event has at most one block",
+    "event_consistency": "Block data matches the stored event",
     "event_coverage": "Every supported event has a block",
 }
 
@@ -151,7 +156,21 @@ def _verify(conn: sqlite3.Connection) -> dict[str, Any]:
         if block["event_id"] is not None and data is not None:
             _check_event_reference(conn, block, data, fail)
 
-    covered_events = {row["event_id"] for row in blocks if row["event_id"] is not None}
+    first_block_for_event: dict[int, int] = {}
+    for row in blocks:
+        event_id = row["event_id"]
+        if event_id is None:
+            continue
+        if event_id in first_block_for_event:
+            fail(
+                row["block_index"],
+                "event_uniqueness",
+                f"Event {event_id} is recorded in block {first_block_for_event[event_id]} and again in block "
+                f"{row['block_index']}. Each event may have only one block.",
+            )
+        else:
+            first_block_for_event[event_id] = row["block_index"]
+    covered_events = set(first_block_for_event)
     for event in conn.execute(
         "SELECT id, event_type FROM supply_chain_events WHERE event_type IN (?, ?, ?) ORDER BY id",
         SUPPORTED_EVENT_TYPES,
@@ -183,7 +202,8 @@ def _check_event_reference(conn: sqlite3.Connection, block: sqlite3.Row, data: d
     event_id = block["event_id"]
     event = conn.execute(
         """
-        SELECT e.id, e.event_type, b.batch_code
+        SELECT e.id, e.event_type, e.status, e.note, e.event_timestamp, e.actor_role,
+               b.batch_code, b.product_name, b.quantity, b.unit, b.origin, b.harvest_date
         FROM supply_chain_events e
         LEFT JOIN product_batches b ON b.id = e.batch_id
         WHERE e.id = ?
@@ -199,3 +219,21 @@ def _check_event_reference(conn: sqlite3.Connection, block: sqlite3.Row, data: d
         fail(index, "event_references", f"The block's event type {data.get('event_type')!r} does not match event {event_id} ({event['event_type']}).")
     if data.get("batch_id") != event["batch_code"]:
         fail(index, "event_references", f"The block's batch ID {data.get('batch_id')!r} does not match the batch of event {event_id}.")
+
+    # The block must say the same things as the stored records it describes. Only fields the block
+    # actually carries are compared, so older blocks that omit a field are not reported.
+    for key in ("status", "actor_role", "note", "event_timestamp"):
+        if key in data and data[key] != event[key]:
+            fail(
+                index,
+                "event_consistency",
+                f"The block's {key} {data[key]!r} does not match the stored {key} {event[key]!r} of event {event_id}.",
+            )
+    if event["event_type"] == "PRODUCT_REGISTERED":
+        for key in ("product_name", "quantity", "unit", "origin", "harvest_date"):
+            if key in data and data[key] != event[key]:
+                fail(
+                    index,
+                    "event_consistency",
+                    f"The block's {key} {data[key]!r} does not match the batch of event {event_id} ({event[key]!r}).",
+                )

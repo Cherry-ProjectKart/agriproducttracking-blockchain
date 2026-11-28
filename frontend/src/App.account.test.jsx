@@ -175,9 +175,10 @@ describe('account settings route and density', () => {
     window.history.replaceState({}, '', '/account');
     render(<App />);
     await screen.findByRole('heading', { name: 'Account settings' });
-    expect(document.documentElement.dataset.gridDensity).toBe('comfortable');
+    // The account and session load after the heading appears, so wait for each before using it.
+    await waitFor(() => expect(document.documentElement.dataset.gridDensity).toBe('comfortable'), { timeout: 4000 });
 
-    fireEvent.click(screen.getByRole('radio', { name: /Compact/ }));
+    fireEvent.click(await screen.findByRole('radio', { name: /Compact/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Save preferences' }));
 
     await waitFor(() => expect(document.documentElement.dataset.gridDensity).toBe('compact'), { timeout: 4000 });
