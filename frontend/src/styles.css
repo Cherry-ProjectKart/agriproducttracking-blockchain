@@ -531,6 +531,115 @@ body {
   color: #b91c1c;
 }
 
+/* BPT-110: public product journey (progress, handover, overview) */
+.tracking-description {
+  margin: 0.5rem 0 0;
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
+}
+
+.tracking-progress-section,
+.tracking-handover {
+  margin-top: 1.5rem;
+}
+
+.tracking-progress {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.tracking-milestone {
+  display: grid;
+  grid-template-columns: 1.5rem 1fr auto;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: #ffffff;
+}
+
+.tracking-milestone__mark {
+  font-weight: 700;
+  text-align: center;
+}
+
+.tracking-milestone__title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.tracking-milestone__state {
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.tracking-milestone__time {
+  grid-column: 2 / 4;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+.tracking-milestone--completed {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.tracking-milestone--completed .tracking-milestone__mark {
+  color: #166534;
+}
+
+.tracking-milestone--current {
+  border-color: #7dd3fc;
+  background: #f0f9ff;
+  box-shadow: inset 4px 0 0 #0369a1;
+}
+
+.tracking-milestone--current .tracking-milestone__mark {
+  color: #075985;
+}
+
+.tracking-milestone--pending {
+  border-style: dashed;
+  color: var(--color-muted);
+}
+
+.tracking-progress__note,
+.tracking-handover__pending {
+  margin: 0.75rem 0 0;
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
+}
+
+.tracking-step__title {
+  margin: 0.25rem 0 0.5rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.tracking-step__role {
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
+@media (min-width: 768px) {
+  .tracking-progress {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .tracking-milestone {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .tracking-milestone__time {
+    grid-column: auto;
+  }
+}
+
 /* BPT-108: ledger block count and hash copy */
 .ledger__count {
   margin: 0 0 0.5rem;

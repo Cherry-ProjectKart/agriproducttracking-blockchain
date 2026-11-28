@@ -20,7 +20,7 @@ VALID_BATCH = {
     "origin": "Green Valley Farm",
     "harvest_date": "2026-10-15",
 }
-PUBLIC_BATCH_KEYS = {"batch_id", "product_name", "origin", "current_status"}
+PUBLIC_BATCH_KEYS = {"batch_id", "product_name", "origin", "current_status", "description", "quantity", "unit", "harvest_date"}
 PUBLIC_EVENT_KEYS = {"event_type", "label", "actor_role", "status", "note", "timestamp", "ledger_block_index"}
 
 
@@ -108,12 +108,14 @@ def test_tracking_returns_product_origin_and_current_status(client):
 
     batch = client.get(f"/api/tracking/{batch_id}").get_json()["batch"]
 
-    assert batch == {
-        "batch_id": batch_id,
-        "product_name": "Basmati Rice",
-        "origin": "Green Valley Farm",
-        "current_status": "Received by Retailer",
-    }
+    assert set(batch.keys()) == PUBLIC_BATCH_KEYS
+    assert batch["batch_id"] == batch_id
+    assert batch["product_name"] == "Basmati Rice"
+    assert batch["origin"] == "Green Valley Farm"
+    assert batch["current_status"] == "Received by Retailer"
+    assert batch["quantity"] == 250
+    assert batch["unit"] == "kg"
+    assert batch["harvest_date"] == "2026-10-15"
 
 
 def test_registration_shipment_and_receipt_events_appear_in_order(client):

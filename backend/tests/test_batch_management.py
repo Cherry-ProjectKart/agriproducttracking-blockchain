@@ -372,18 +372,24 @@ def test_edit_keeps_shipment_and_receipt_records_intact(client, db_path):
     assert "Received by Retailer" in statuses
 
 
-def test_public_tracking_is_unchanged_by_an_edit(client, db_path):
+def test_public_tracking_changes_only_the_description_after_an_edit(client, db_path):
+    # BPT-110 shows the product description on the public page, so an edit now changes that one field.
+    # The events, the status and every other batch field must stay exactly as they were.
     _as_farmer(client)
     batch = _batch(client)
     _ship_and_receive(client, batch["batch_id"])
     before = client.get(f"/api/tracking/{batch['batch_id']}").get_json()
 
     _as_farmer(client)
-    _patch(client, batch["id"], {"description": "Private note the consumer should not see"})
+    _patch(client, batch["id"], {"description": "Updated product description"})
     after = client.get(f"/api/tracking/{batch['batch_id']}").get_json()
 
-    assert after == before
-    assert "Private note" not in client.get(f"/api/tracking/{batch['batch_id']}").get_data(as_text=True)
+    assert after["events"] == before["events"]
+    assert after["count"] == before["count"]
+    assert {k: v for k, v in after["batch"].items() if k != "description"} == {
+        k: v for k, v in before["batch"].items() if k != "description"
+    }
+    assert after["batch"]["description"] == "Updated product description"
 
 
 def test_ledger_stays_valid_after_registration_edits_and_shipments(client):

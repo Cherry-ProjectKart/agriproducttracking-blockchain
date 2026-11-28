@@ -12,6 +12,9 @@ from typing import Any
 from app.services.history_service import batch_history
 
 PUBLIC_BATCH_FIELDS: tuple[str, ...] = ("batch_id", "product_name", "origin", "current_status")
+# Product facts recorded when the batch was registered. They are shown to consumers, and nothing else
+# from the batch row (for example the farmer's account) is.
+PUBLIC_PRODUCT_FIELDS: tuple[str, ...] = ("description", "quantity", "unit", "harvest_date")
 PUBLIC_EVENT_FIELDS: tuple[str, ...] = (
     "event_type",
     "label",
@@ -28,8 +31,14 @@ def public_tracking(conn: sqlite3.Connection, batch_code: str) -> dict[str, Any]
     history = batch_history(conn, batch_code)
     if history is None:
         return None
+    product = conn.execute(
+        "SELECT description, quantity, unit, harvest_date FROM product_batches WHERE batch_code = ?",
+        (batch_code,),
+    ).fetchone()
+    batch = {field: history["batch"][field] for field in PUBLIC_BATCH_FIELDS}
+    batch.update({field: product[field] for field in PUBLIC_PRODUCT_FIELDS})
     return {
-        "batch": {field: history["batch"][field] for field in PUBLIC_BATCH_FIELDS},
+        "batch": batch,
         "count": history["count"],
         "events": [{field: event[field] for field in PUBLIC_EVENT_FIELDS} for event in history["events"]],
     }
