@@ -2,7 +2,7 @@
 
 A blockchain-enabled system for tracing agricultural products from farm to retail. Every supply-chain event is recorded in a tamper-evident ledger so that a product's journey can be verified by farmers, distributors, retailers and consumers.
 
-> **Status:** Ledger integrity and event recording (BPT-108); Distributor shipment lifecycle and movement management (BPT-107); Farmer batch registration and management (BPT-105); user profile and account settings (BPT-104); role-specific workspaces and responsive grids (BPT-103); strict role isolation and protected workspaces (BPT-102); account registration and sign-in (BPT-101), replacing the earlier role selector; consumer QR tracking (BPT-009, US-08) on top of batch history and ledger integrity verification (BPT-008, US-07), retailer receipt confirmation (BPT-007, US-06), distributor shipment updates (BPT-006, US-05), the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001).
+> **Status:** Retailer receipt confirmation and batch handover (BPT-109); Ledger integrity and event recording (BPT-108); Distributor shipment lifecycle and movement management (BPT-107); Farmer batch registration and management (BPT-105); user profile and account settings (BPT-104); role-specific workspaces and responsive grids (BPT-103); strict role isolation and protected workspaces (BPT-102); account registration and sign-in (BPT-101), replacing the earlier role selector; consumer QR tracking (BPT-009, US-08) on top of batch history and ledger integrity verification (BPT-008, US-07), retailer receipt confirmation (BPT-007, US-06), distributor shipment updates (BPT-006, US-05), the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001).
 
 ## Technology stack
 
@@ -514,61 +514,86 @@ A `409` for a movement that is not allowed gives the reason, for example: `PB-7N
 - The lifecycle is a single sequence. A batch that was actually shipped to a warehouse and back cannot be represented; a correction would need a new event type, which is outside this story.
 - Movements are not reversible from the workspace. A mistaken movement stays on the ledger, and the next valid step is the only one offered.
 
-## Retailer receipt confirmation (US-06)
+## Retailer receipt confirmation and handover (US-06, BPT-109)
 
-
-A retailer confirms that a batch has arrived. The batch then moves from `Delivered to Retailer` to `Received by Retailer`, and the confirmation is recorded in the ledger.
+A retailer confirms that a batch has arrived. The batch moves from `Delivered to Retailer` to `Received by Retailer`, and the handover is recorded in the ledger. This is the last step of the supply chain in this demonstration.
 
 ### Workflow
 
-1. Choose **Retailer** on the role screen. The workspace lists the batches awaiting receipt: those whose status is `Delivered to Retailer`. Each row shows the batch ID, product, origin, quantity and current status.
-2. Select a batch. The panel states that its status will change to `Received by Retailer`.
-3. Select **Confirm receipt**. The button shows *Confirming…* until the server answers.
-4. On success, the confirmation shows the batch ID, the new status, the ledger block number and its hash. The batch leaves the list.
+1. Choose **Retailer** on the role screen.
+2. **Incoming shipments awaiting receipt** lists the batches whose distributor status is `Delivered to Retailer`. Each row shows the batch ID, product, origin, quantity, current status and the time the distributor delivered it. The section explains that earlier stages of a shipment are not listed here.
+3. Select a batch. **Batch details** shows its product, origin, quantity, harvest date, the delivery time and its current status. It also links to the public tracking page for the batch.
+4. **Shipment and receipt history** shows the batch's registration, shipment and receipt events in chronological order, with their ledger block numbers.
+5. Select **Confirm receipt**. Nothing is sent yet: a confirmation says that this is the final handover, that its status will change to `Received by Retailer`, and that it is recorded on the ledger and cannot be undone. Select **Confirm handover** to record it, or **Cancel** to change nothing.
+6. While the receipt is being recorded, the button reads *Recording…* and cannot be pressed again.
+7. On success, the confirmation shows the batch ID, the new status, the time the batch was received, the ledger block number and its hash. The batch leaves the awaiting list and appears in **Received batches**.
 
-Batches that are `Registered`, `Shipped` or `In Transit` are not awaiting receipt, and the API refuses to confirm them. A batch that is already received cannot be confirmed again.
+If no batch is selected when you press **Confirm receipt**, the panel asks you to select one. If the server refuses the receipt, its reason is shown; for a batch that has already been received, the lists are reloaded so they show the current state.
 
-### Business rule
+**Received batches** lists the batches already received, most recent first, with the time each was received. **History** opens that batch's full history.
 
-| Actor | Action | Result |
+### Eligibility rules
+
+| Batch status | Can be received | Reason |
 |---|---|---|
-| Retailer | Confirm receipt of a `Delivered to Retailer` batch | `Received by Retailer`; `RECEIPT_CONFIRMED` event; one ledger block |
+| `Delivered to Retailer` | Yes | The distributor's final movement is recorded |
+| `Registered`, `Shipped`, `In Transit` | No (`409`) | The shipment has not reached the retailer |
+| `Received by Retailer` | No (`409`) | Already received; a second receipt is never recorded |
+| Unknown batch ID | No (`404`) | No such batch |
+| Malformed or missing batch ID | No (`400`) | Invalid request |
 
-The retailer is taken from the signed demo session. The request body cannot set the actor.
+The eligibility check runs on the server, inside the transaction that records the receipt. The client's list is only a convenience.
 
-### Recording and atomicity
+After a batch is received, no distributor movement can be recorded for it. A later shipment request returns `409` and nothing is written.
 
-A confirmation writes three things in one SQLite transaction (`BEGIN IMMEDIATE`): the batch status change, the `RECEIPT_CONFIRMED` event, and the ledger block. The eligibility check runs inside that transaction, so two confirmations at the same time cannot both succeed. If the ledger block cannot be written, the status change and the event are rolled back as well. The batch then remains `Delivered to Retailer`.
+### What is recorded
 
-The event has `actor_role` `retailer`, `status` `Received by Retailer` and the event timestamp. Its ledger block has the same event data and links to the block before it, using the same hashing as the other events (see Local ledger).
+A receipt writes three things in one SQLite transaction (`BEGIN IMMEDIATE`):
 
-### Repeated requests
+1. the batch status changes from `Delivered to Retailer` to `Received by Retailer`;
+2. one `supply_chain_events` row: `event_type` `RECEIPT_CONFIRMED`, `actor_role` `retailer`, status `Received by Retailer`, and the event timestamp;
+3. one ledger block with the same event data and timestamp, linked to the block before it (see Local ledger).
 
-Like the other write endpoints, confirmation requires an `Idempotency-Key` header. Sending the same key again returns the stored receipt (`200`) and writes nothing. Sending a new key for a batch that is already received returns `409`, so a second receipt is never recorded.
+The receipt event is the receipt record. There is no separate receipt table. Its timestamp is the time the receipt was recorded, and the block carries the same timestamp.
 
-### Role restrictions
+The distributor's earlier movements are not changed. The `Delivered to Retailer` movement stays in the history as it was recorded.
 
-- Only an active **Retailer** session can list awaiting batches or confirm receipt. Farmer and Distributor sessions get `403`. No session gets `401`.
-- The Retailer panel is shown only in the Retailer workspace, and only that role loads its data.
-- The awaiting list contains no farmer identity.
+### Atomicity, rollback and repeated requests
+
+If the status change, the event or the ledger block cannot be written, all three are rolled back, so the batch stays `Delivered to Retailer` with no event and no block. The tests install a failure at each of these stages and check that the database is unchanged; a retry then succeeds.
+
+Confirmation requires an `Idempotency-Key` header. Sending the same key again returns the stored receipt (`200`) and writes nothing. Two requests sent at the same time cannot both record a receipt: the second one either returns the stored receipt or is refused. A new key for a batch that is already received returns `409`.
+
+### Public tracking
+
+After a receipt, the public tracking page at `/track/<batch ID>` shows the batch as `Received by Retailer`, and its journey in order: the registration, each shipment movement (including `Delivered to Retailer`), and then the receipt by the retailer with its ledger block. The page needs no login and cannot change anything. The QR code and its tracking URL are unchanged by a receipt.
+
+### Role restrictions and shared access
+
+- Only an active **Retailer** session can list the awaiting or received batches, or confirm a receipt. Farmer and Distributor sessions get `403`. No session gets `401`.
+- The retailer is taken from the signed session; the request body cannot set it.
+- **Shared access (existing model, unchanged):** the receipt event records the retailer role, not the individual retailer. Any signed-in retailer can receive any batch that is awaiting receipt, and the lists show all such batches. This matches the existing demonstration model. Per-retailer ownership would need a new field and was not introduced in this story.
+- The lists contain no farmer identity and no user names.
 
 ### API
 
 | Method | Path | Access | Description |
 |---|---|---|---|
-| GET | `/api/receipts/awaiting` | Retailer | Batches with status `Delivered to Retailer` |
-| POST | `/api/receipts` | Retailer, `Idempotency-Key` required | Body `{"batch_id": "PB-XXXX-XXXX"}`. `201` confirmed, `200` repeated request, `400` invalid or missing batch ID, `404` unknown batch, `409` not awaiting receipt, already received, or key reused for another batch |
+| GET | `/api/receipts/awaiting` | Retailer | Batches with status `Delivered to Retailer`, each with `delivered_at` |
+| GET | `/api/receipts/received` | Retailer | Batches with status `Received by Retailer`, each with `received_at` |
+| POST | `/api/receipts` | Retailer, `Idempotency-Key` required | Body `{"batch_id": "PB-XXXX-XXXX"}`. `201` confirmed, `200` repeated request, `400` invalid or missing batch ID or key, `404` unknown batch, `409` not awaiting receipt, already received, or key reused for another batch |
 
-Successful responses contain `batch` (`batch_id`, `current_status`), `event` (`event_id`, `event_type`, `actor_role`, `batch_id`, `status`, `timestamp`) and `ledger_block` (`index`, `block_hash`, `previous_hash`).
+Successful receipt responses contain `batch` (`batch_id`, `current_status`), `event` (`event_id`, `event_type`, `actor_role`, `batch_id`, `status`, `timestamp`) and `ledger_block` (`index`, `block_hash`, `previous_hash`).
 
 ### Database changes
 
-None. The existing `product_batches.current_status`, `supply_chain_events` (including the request key from BPT-006) and `ledger_blocks` store the receipt. The schema is unchanged, and `init_db` on an existing database leaves its data and schema as they were.
+None. This story added read endpoints and reads existing columns and events. The schema is unchanged, no migration runs, and existing users, batches, shipments, receipts and ledger blocks are not modified.
 
 ### Limitations
 
-- Receipt is recorded only as a status change and an event. The retailer cannot add a note, and there is no receipt history view. The ledger view shows the event.
-- The demo cannot prove that the physical goods arrived. The ledger records the confirmation, not the goods.
+- The retailer cannot add a note to a receipt.
+- The demonstration records that the receipt was confirmed. It cannot prove that the goods arrived in the stated condition.
+- Any retailer can receive any awaiting batch (shared access, see above).
 
 ## Ledger integrity and event recording (BPT-108)
 
