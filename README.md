@@ -2,7 +2,7 @@
 
 A blockchain-enabled system for tracing agricultural products from farm to retail. Every supply-chain event is recorded in a tamper-evident ledger so that a product's journey can be verified by farmers, distributors, retailers and consumers.
 
-> **Status:** Farmer batch registration and management (BPT-105); user profile and account settings (BPT-104); role-specific workspaces and responsive grids (BPT-103); strict role isolation and protected workspaces (BPT-102); account registration and sign-in (BPT-101), replacing the earlier role selector; consumer QR tracking (BPT-009, US-08) on top of batch history and ledger integrity verification (BPT-008, US-07), retailer receipt confirmation (BPT-007, US-06), distributor shipment updates (BPT-006, US-05), the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001).
+> **Status:** Distributor shipment lifecycle and movement management (BPT-107); Farmer batch registration and management (BPT-105); user profile and account settings (BPT-104); role-specific workspaces and responsive grids (BPT-103); strict role isolation and protected workspaces (BPT-102); account registration and sign-in (BPT-101), replacing the earlier role selector; consumer QR tracking (BPT-009, US-08) on top of batch history and ledger integrity verification (BPT-008, US-07), retailer receipt confirmation (BPT-007, US-06), distributor shipment updates (BPT-006, US-05), the local hash-linked ledger (BPT-005, US-04), unique batch IDs and QR codes (BPT-004, US-03), farmer batch registration (BPT-003, US-02), demo role access (BPT-002, US-01) and the project foundation (BPT-001).
 
 ## Technology stack
 
@@ -423,31 +423,41 @@ The workspace for every role has a **Local ledger** table showing the block numb
 - **Does not:** provide decentralised immutability. The chain lives in one local SQLite database. Anyone with write access to that file could rewrite the whole chain, and the ledger has no independent copies or consensus. The SRS says this explicitly.
 - No wallets, tokens, mining, consensus or public network are involved.
 
-## Distributor shipment updates (US-05)
+## Distributor shipment updates (US-05, BPT-107)
 
-A distributor records the shipment or movement status of a registered batch. Each update changes the batch's status, adds a shipment event, and adds a block to the local ledger.
+A distributor moves a registered batch through its shipment lifecycle. Each movement changes the batch's status, adds a shipment event, and adds a block to the local ledger. The batch's full movement history stays visible in order.
 
 ### Workflow
 
-1. Choose **Distributor** on the role screen. The workspace lists every registered batch with its batch ID, product, origin, quantity and current status.
-2. Select a batch.
-3. Choose a shipment status and, optionally, add a short note.
-4. Select **Save shipment update**. The button shows *Saving…* until the server answers.
-5. On success, the confirmation shows the new status, the ledger block number, the event time and the block hash. The batch list refreshes to show the new status.
+1. Choose **Distributor** on the role screen. The workspace lists every registered batch with its batch ID, product, origin, quantity, current status and **next movement**.
+2. Select a batch that has a next movement. Batches with no further movement are shown but cannot be selected.
+3. The **Shipment details** card shows the batch's product, origin, quantity, harvest date, registration time, current status and next movement. It also links to the batch's public tracking page (`/track/<batch ID>`).
+4. The **Movement history** card shows the batch's registration, shipment and receipt events in order.
+5. The status is set to the batch's next movement. Optionally add a short note, then select **Save shipment update**.
+6. A confirmation appears, saying which movement will be recorded and that it cannot be undone. Select **Confirm and record** to save it, or **Cancel** to change nothing. Nothing is sent before you confirm.
+7. On success, the confirmation shows the new status, the ledger block number, the event time and the block hash. The batch list, details and history are refreshed.
 
-### Supported shipment statuses
+### Shipment lifecycle
 
-| Status | Meaning in this demo |
+Batches move through one ordered sequence. A batch moves one step at a time:
+
+| Current status | Next movement the distributor may record |
 |---|---|
-| `Shipped` | The batch has left the farm or the previous stage |
-| `In Transit` | The batch is on its way |
-| `Delivered to Retailer` | The batch has been handed to the retailer |
+| `Registered` | `Shipped` |
+| `Shipped` | `In Transit` |
+| `In Transit` | `Delivered to Retailer` |
+| `Delivered to Retailer` | none. The retailer then confirms receipt (US-06) |
+| `Received by Retailer` | none |
 
-These three values come from the sprint plan (US-05: "Shipped / In Transit / Delivered to Retailer") and the SRS business rules ("Shipped or In Transit"). The same values are used in the form, the API, the database, the event data and the ledger.
+- A batch cannot skip a step, go backwards, or repeat a status. For example, `Registered` to `In Transit`, or `In Transit` back to `Shipped`, is refused with `409` and nothing is written.
+- Choosing *Delivered to Retailer* does not mark the batch as received. That happens only when a retailer confirms receipt (US-06, see Retailer receipt confirmation below).
+- The rule is checked on the server inside the same transaction that writes the movement. Two requests for the same batch cannot both pass the check.
 
-Choosing *Delivered to Retailer* does not mark the batch as received. That happens only when a retailer confirms receipt (US-06, see Retailer receipt confirmation below).
+#### Legacy and unexpected statuses
 
-Every batch starts as `Registered`. The status changes to the latest shipment status, and each change is kept as its own event.
+- A batch whose status is the schema default `CREATED` (written before the registration status was set explicitly) is treated as registered, so it can still be shipped.
+- A batch with any other status that has no next movement stays visible and its history stays readable. The distributor cannot record a new movement for it, and the workspace shows **None** as its next movement.
+- No existing shipment, event or block is changed or removed when the rule is applied. Earlier records were written under the previous behaviour and are kept as they are.
 
 ### Optional note
 
@@ -457,40 +467,55 @@ Every batch starts as `Registered`. The status changes to the latest shipment st
 
 ### Event and ledger integration
 
-Each successful update creates:
+Each successful movement creates:
 
 - One `supply_chain_events` row: `event_type` `SHIPMENT_UPDATED`, `actor_role` `distributor`, the new `status`, the `note` and `event_timestamp`.
 - One ledger block whose event data contains `event_type`, `event_id`, `batch_id`, `actor_role`, `status`, `note` and `event_timestamp`. The block is linked to the previous block with the same hashing used for registrations (see Local ledger).
 
+Movement history and the ledger agree: each shipment event has exactly one block, and the full chain verifies after every movement. Earlier blocks are never changed by a new movement.
+
 ### Transactions, rollback and repeated requests
 
-The batch status update, the event and the ledger block are written in one SQLite transaction (`BEGIN IMMEDIATE`). If any step fails, all three are rolled back, so no status change, event or block is left behind. A test forces a ledger failure and checks that nothing was saved.
+The status check, the batch status update, the event and the ledger block are written in one SQLite transaction. The transaction starts before the current status is read (`BEGIN IMMEDIATE`). If any step fails, everything is rolled back, so no status change, event or block is left behind.
 
-Like registration, each update requires an `Idempotency-Key` header. Repeating the same request returns the existing update (`200`) and writes nothing. Reusing the key for a different batch, status or note returns `409`.
+Each request requires an `Idempotency-Key` header. Repeating the same request returns the existing movement (`200`) and writes nothing. Reusing the key for a different batch, status or note returns `409`. Sending a new key for a movement that has already happened returns `409` because that movement is no longer allowed, and nothing is written.
 
-### Role restrictions
+### Public tracking
 
-- Only an active **Distributor** session can list batches for shipment or record an update. Farmer and Retailer sessions get `403`, and a request with no session gets `401`.
+The public tracking page at `/track/<batch ID>` reads the same history. After a successful movement it shows the new current status and the new event, in order. The page is read-only: it cannot record or change anything, and it shows no account or user information.
+
+### Role restrictions and ownership
+
+- Only an active **Distributor** session can list batches for shipment or record a movement. Farmer and Retailer sessions get `403`, and a request with no session gets `401`.
 - The distributor is taken from the signed session, never from the request body.
 - The Farmer's batch endpoints (`/api/batches`, QR codes) are unchanged. The distributor's batch list does not include the farmer's identity.
 - Only the Distributor workspace shows the shipment form.
+- **Shared access (existing model, unchanged):** the data model records the role of each shipment event, not the individual distributor. Any distributor can move any registered batch, and the workspace lists all batches. This matches the existing demonstration model. Per-distributor ownership would need a new field and was not introduced in this story.
 
 ### API
 
 | Method | Path | Access | Description |
 |---|---|---|---|
-| GET | `/api/shipments/batches` | Distributor | Registered batches for shipment updates (no farmer identity) |
-| POST | `/api/shipments` | Distributor, `Idempotency-Key` required | Body `{"batch_id", "status", "note"?}`. `201` created, `200` repeated request, `400` invalid input (with `error.details`), `404` unknown batch, `409` key reused for different details |
+| GET | `/api/shipments/batches` | Distributor | Registered batches, with `next_statuses` for each (no farmer identity) |
+| POST | `/api/shipments` | Distributor, `Idempotency-Key` required | Body `{"batch_id", "status", "note"?}`. `201` created, `200` repeated request, `400` invalid input (with `error.details`), `404` unknown batch, `409` movement not allowed from the batch's current status, or key reused for different details |
 
 Successful responses contain `batch` (`batch_id`, `current_status`), `event` (`event_id`, `event_type`, `actor_role`, `batch_id`, `status`, `note`, `timestamp`) and `ledger_block` (`index`, `block_hash`, `previous_hash`).
 
+A `409` for a movement that is not allowed gives the reason, for example: `PB-7N6P-M0SK is In Transit. The next shipment update for it is Delivered to Retailer.`
+
 ### Database changes
 
-- `supply_chain_events` gained `client_request_id` (the idempotency key), added with `ALTER TABLE` and a UNIQUE index. Existing events keep `NULL`.
-- No other table changed. `product_batches.current_status` already existed and is now updated by shipments.
-- The migration was run on a copy of the local database: the events, batches, users and ledger were all kept and the foreign-key check was clean.
+- None in BPT-107. The schema, migrations and existing rows are unchanged, and no migration runs. The lifecycle is enforced in code against the existing `product_batches.current_status` values.
+- Earlier, under US-05: `supply_chain_events` gained `client_request_id` (the idempotency key), added with `ALTER TABLE` and a UNIQUE index. Existing events keep `NULL`.
+
+### Known limitations
+
+- Shared access: any distributor can move any batch (see Role restrictions and ownership).
+- The lifecycle is a single sequence. A batch that was actually shipped to a warehouse and back cannot be represented; a correction would need a new event type, which is outside this story.
+- Movements are not reversible from the workspace. A mistaken movement stays on the ledger, and the next valid step is the only one offered.
 
 ## Retailer receipt confirmation (US-06)
+
 
 A retailer confirms that a batch has arrived. The batch then moves from `Delivered to Retailer` to `Received by Retailer`, and the confirmation is recorded in the ledger.
 

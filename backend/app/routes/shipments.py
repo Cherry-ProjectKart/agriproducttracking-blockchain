@@ -18,6 +18,7 @@ from app.models.batch import IDEMPOTENCY_KEY_PATTERN
 from app.services.shipment_service import (
     ShipmentBatchNotFoundError,
     ShipmentConflictError,
+    ShipmentTransitionError,
     ShipmentValidationError,
     distributor_exists,
     list_shipment_batches,
@@ -76,6 +77,8 @@ def create_shipment():
     except ShipmentBatchNotFoundError as exc:
         raise ApiError(404, "Batch not found.") from exc
     except ShipmentConflictError as exc:
+        raise ApiError(409, str(exc)) from exc
+    except ShipmentTransitionError as exc:
         raise ApiError(409, str(exc)) from exc
 
     return jsonify(result), (201 if created else 200)

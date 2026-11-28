@@ -35,6 +35,10 @@ vi.mock('./services/ledgerService.js', () => ({
   fetchLedger: vi.fn().mockResolvedValue({ count: 0, latest: null, blocks: [] }),
 }));
 
+vi.mock('./services/historyService.js', () => ({
+  fetchBatchHistory: vi.fn().mockResolvedValue({ batch: { batch_id: 'PB-7K2M-9QXD' }, count: 0, events: [] }),
+}));
+
 vi.mock('./services/healthService.js', () => ({
   fetchHealth: vi.fn(),
 }));
@@ -67,6 +71,7 @@ const SHIPMENT_BATCH = {
   harvest_date: '2026-10-15',
   current_status: 'Registered',
   created_at: '2026-11-26T10:00:00.000Z',
+  next_statuses: ['Shipped'],
 };
 
 describe('Distributor shipment workspace in the app', () => {
@@ -123,9 +128,9 @@ describe('Distributor shipment workspace in the app', () => {
     render(<App />);
     fireEvent.click(await screen.findByRole('radio', { name: 'Select batch PB-7K2M-9QXD' }));
 
-    fireEvent.change(screen.getByLabelText(/Shipment status/), { target: { value: 'In Transit' } });
+    fireEvent.change(screen.getByLabelText(/Shipment status/), { target: { value: 'Shipped' } });
 
-    expect(screen.getByLabelText(/Shipment status/).value).toBe('In Transit');
+    expect(screen.getByLabelText(/Shipment status/).value).toBe('Shipped');
     expect(screen.getByRole('heading', { name: 'Distributor workspace' })).toBeTruthy();
   });
 });

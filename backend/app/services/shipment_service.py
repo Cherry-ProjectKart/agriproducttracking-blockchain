@@ -1,12 +1,14 @@
-"""Distributor shipment updates (US-05).
+"""Distributor shipment updates (US-05, BPT-107).
 
 A shipment update does three things in one SQLite transaction:
-1. sets product_batches.current_status to the new status,
-2. inserts a SHIPMENT_UPDATED row in supply_chain_events,
+1. checks that the batch's current status allows this movement (see app/models/shipment.py),
+2. sets product_batches.current_status to the new status and inserts a SHIPMENT_UPDATED row in
+   supply_chain_events,
 3. appends the matching block to the local ledger (app/services/ledger_service.py).
 
-If any step fails, all three are rolled back. A repeated request with the same Idempotency-Key
-returns the existing shipment and writes nothing.
+The transaction starts before the status is read, so two requests for the same batch cannot both
+pass the check. If any step fails, all three are rolled back. A repeated request with the same
+Idempotency-Key returns the existing shipment and writes nothing.
 """
 
 import re
@@ -18,6 +20,7 @@ from app.models.shipment import (
     SHIPMENT_ACTOR_ROLE,
     SHIPMENT_EVENT_TYPE,
     SHIPMENT_STATUSES,
+    next_shipment_statuses,
 )
 from app.services.batch_identifiers import is_valid_batch_id
 from app.services.ledger_service import append_block, get_block_for_event, shipment_event_data, utc_timestamp
@@ -40,6 +43,10 @@ class ShipmentConflictError(Exception):
 
 class ShipmentBatchNotFoundError(LookupError):
     """Raised when no batch has the given batch ID."""
+
+
+class ShipmentTransitionError(Exception):
+    """Raised when the batch's current status does not allow the requested movement."""
 
 
 def distributor_exists(conn: sqlite3.Connection, user_id: int) -> bool:
@@ -83,12 +90,21 @@ def validate_shipment_input(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def list_shipment_batches(conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    """Every registered batch, newest first. No farmer identity is included."""
+    """Every registered batch, newest first, with the statuses each may move to next.
+
+    No farmer identity is included. A batch with no next status (for example one already delivered,
+    or one with a legacy status) is still listed so that its history can be seen.
+    """
     rows = conn.execute(
         f"SELECT {_BATCH_COLUMNS} FROM product_batches b WHERE b.batch_code IS NOT NULL "
         "ORDER BY b.created_at DESC, b.id DESC"
     ).fetchall()
-    return [dict(row) for row in rows]
+    batches = []
+    for row in rows:
+        batch = dict(row)
+        batch["next_statuses"] = list(next_shipment_statuses(batch["current_status"]))
+        batches.append(batch)
+    return batches
 
 
 def _shipment_response(conn: sqlite3.Connection, event_id: int) -> dict[str, Any]:
@@ -141,6 +157,12 @@ def _same_shipment(row: sqlite3.Row, clean: dict[str, Any]) -> bool:
     )
 
 
+def _transition_message(batch_id: str, current_status: str, allowed: tuple[str, ...]) -> str:
+    if allowed:
+        return f"{batch_id} is {current_status}. The next shipment update for it is {allowed[0]}."
+    return f"{batch_id} is {current_status}, so no further shipment update can be recorded for it."
+
+
 def record_shipment(
     conn: sqlite3.Connection, submission_key: str, clean: dict[str, Any]
 ) -> tuple[dict[str, Any], bool]:
@@ -148,23 +170,32 @@ def record_shipment(
 
     created is False when the same submission key was already recorded with the same details;
     the stored result is returned and nothing is written. Raises ShipmentBatchNotFoundError for an
-    unknown batch ID, and ShipmentConflictError when the key was used for different details.
+    unknown batch ID, ShipmentTransitionError when the batch's current status does not allow this
+    movement, and ShipmentConflictError when the key was used for different details.
     """
-    existing = _find_by_request_key(conn, submission_key)
-    if existing is not None:
-        if not _same_shipment(existing, clean):
-            raise ShipmentConflictError("This submission key was already used for a different shipment.")
-        return _shipment_response(conn, existing["event_id"]), False
-
-    batch = conn.execute(
-        "SELECT id, batch_code FROM product_batches WHERE batch_code = ?", (clean["batch_id"],)
-    ).fetchone()
-    if batch is None:
-        raise ShipmentBatchNotFoundError(clean["batch_id"])
-
+    if not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")
     try:
-        if not conn.in_transaction:
-            conn.execute("BEGIN IMMEDIATE")
+        existing = _find_by_request_key(conn, submission_key)
+        if existing is not None:
+            if not _same_shipment(existing, clean):
+                raise ShipmentConflictError("This submission key was already used for a different shipment.")
+            conn.commit()
+            return _shipment_response(conn, existing["event_id"]), False
+
+        batch = conn.execute(
+            "SELECT id, batch_code, current_status FROM product_batches WHERE batch_code = ?",
+            (clean["batch_id"],),
+        ).fetchone()
+        if batch is None:
+            raise ShipmentBatchNotFoundError(clean["batch_id"])
+
+        allowed = next_shipment_statuses(batch["current_status"])
+        if clean["status"] not in allowed:
+            raise ShipmentTransitionError(
+                _transition_message(batch["batch_code"], batch["current_status"], allowed)
+            )
+
         timestamp = utc_timestamp()
         conn.execute(
             "UPDATE product_batches SET current_status = ? WHERE id = ?",

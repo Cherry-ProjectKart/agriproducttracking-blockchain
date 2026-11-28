@@ -4,6 +4,7 @@ import hashlib
 import json
 import sqlite3
 import time
+import uuid
 
 import pytest
 
@@ -137,14 +138,15 @@ def test_distributor_selects_a_batch_and_sets_shipped(client, db_path):
     assert _batch_status(db_path, batch_id) == "Shipped"
 
 
-@pytest.mark.parametrize("status", ["Shipped", "In Transit", "Delivered to Retailer"])
-def test_each_supported_status_is_recorded(client, db_path, status):
+@pytest.mark.parametrize("index,status", [(0, "Shipped"), (1, "In Transit"), (2, "Delivered to Retailer")])
+def test_each_supported_status_is_recorded_in_order(client, db_path, index, status):
     batch_id = _register_batch(client)
     _as_distributor(client)
 
-    response = _ship(client, batch_id, status=status)
+    for step in ("Shipped", "In Transit", "Delivered to Retailer")[: index + 1]:
+        response = _ship(client, batch_id, status=step, key=str(uuid.uuid4()))
+        assert response.status_code == 201
 
-    assert response.status_code == 201
     assert _batch_status(db_path, batch_id) == status
     assert _count(db_path, "SELECT COUNT(*) FROM supply_chain_events WHERE status = ? AND event_type = 'SHIPMENT_UPDATED'", (status,)) == 1
 
@@ -153,7 +155,9 @@ def test_delivered_to_retailer_does_not_mark_the_batch_as_received(client, db_pa
     batch_id = _register_batch(client)
     _as_distributor(client)
 
-    _ship(client, batch_id, status="Delivered to Retailer")
+    _ship(client, batch_id, status="Shipped", key=str(uuid.uuid4()))
+    _ship(client, batch_id, status="In Transit", key=str(uuid.uuid4()))
+    _ship(client, batch_id, status="Delivered to Retailer", key=str(uuid.uuid4()))
 
     assert _batch_status(db_path, batch_id) == "Delivered to Retailer"
     assert _count(db_path, "SELECT COUNT(*) FROM supply_chain_events WHERE status = 'Received by Retailer'") == 0
@@ -380,7 +384,7 @@ def test_failed_ledger_write_rolls_back_status_and_event(client, db_path, monkey
         raise sqlite3.OperationalError("simulated ledger failure")
 
     monkeypatch.setattr(shipment_service, "append_block", failing_append)
-    response = _ship(client, batch_id, status="In Transit", key="dddd0000-4444-4555-8666-000000000001")
+    response = _ship(client, batch_id, status="Shipped", key="dddd0000-4444-4555-8666-000000000001")
 
     assert response.status_code == 500
     assert _batch_status(db_path, batch_id) == "Registered"
@@ -488,7 +492,8 @@ def test_registration_and_ledger_still_work_after_shipments(client, db_path):
 def test_farmer_batch_view_shows_the_updated_status(client):
     batch_id = _register_batch(client)
     _as_distributor(client)
-    _ship(client, batch_id, status="In Transit")
+    _ship(client, batch_id, status="Shipped", key="dddd5555-1111-4222-8333-000000000001")
+    _ship(client, batch_id, status="In Transit", key="dddd5555-1111-4222-8333-000000000002")
     _role(client, "farmer")
 
     listed = client.get("/api/batches").get_json()["batches"]
