@@ -4,6 +4,7 @@ import hashlib
 import json
 import sqlite3
 import time
+import uuid
 
 import pytest
 
@@ -78,9 +79,18 @@ def _ship(client, batch_id, status, key):
     return response
 
 
-def _delivered_batch(client, key_prefix="cccc2222-dddd-4eee-8fff-"):
+SHIPMENT_CHAIN = ("Shipped", "In Transit", "Delivered to Retailer")
+
+
+def _advance(client, batch_id, target):
+    """Record each movement in order, from Registered up to target. Every request gets a new key."""
+    for status in SHIPMENT_CHAIN[: SHIPMENT_CHAIN.index(target) + 1]:
+        _ship(client, batch_id, status, str(uuid.uuid4()))
+
+
+def _delivered_batch(client, key_prefix=None):
     batch_id = _register(client)
-    _ship(client, batch_id, "Delivered to Retailer", key_prefix + "000000000001")
+    _advance(client, batch_id, "Delivered to Retailer")
     return batch_id
 
 
@@ -121,7 +131,7 @@ def test_only_delivered_batches_are_eligible(client):
     shipped = _register(client, key="eeee4444-ffff-4000-8111-000000000002", product_name="Maize")
     _ship(client, shipped, "Shipped", "eeee4444-ffff-4000-8111-000000000003")
     in_transit = _register(client, key="eeee4444-ffff-4000-8111-000000000004", product_name="Beans")
-    _ship(client, in_transit, "In Transit", "eeee4444-ffff-4000-8111-000000000005")
+    _advance(client, in_transit, "In Transit")
     _role(client, "retailer")
 
     ids = [batch["batch_id"] for batch in client.get("/api/receipts/awaiting").get_json()["batches"]]
@@ -320,7 +330,7 @@ def test_missing_idempotency_key_is_rejected(client, db_path):
 def test_batches_not_delivered_to_a_retailer_cannot_be_confirmed(client, db_path, state):
     batch_id = _register(client, key="aaaa7777-2222-4333-8444-" + state.replace(" ", "")[:12].ljust(12, "0"))
     if state != "Registered":
-        _ship(client, batch_id, state, "bbbb8888-3333-4444-8555-" + state.replace(" ", "")[:12].ljust(12, "0"))
+        _advance(client, batch_id, state)
     _role(client, "retailer")
 
     response = _confirm(client, batch_id, key="cccc9999-4444-4555-8666-" + state.replace(" ", "")[:12].ljust(12, "0"))
@@ -341,10 +351,10 @@ def test_a_second_confirmation_with_a_new_key_is_refused(client, db_path):
     assert response.status_code == 409
     assert "already been received" in response.get_json()["error"]["message"]
     assert _count(db_path, "SELECT COUNT(*) FROM supply_chain_events WHERE event_type = 'RECEIPT_CONFIRMED'") == 1
-    assert _count(db_path, "SELECT COUNT(*) FROM ledger_blocks") == 4  # genesis, registration, shipment, receipt
+    assert _count(db_path, "SELECT COUNT(*) FROM ledger_blocks") == 6  # genesis, registration, 3 shipments, receipt
 
 
-def test_a_shipment_after_receipt_is_still_a_separate_distributor_action(client, db_path):
+def test_a_shipment_after_receipt_is_refused(client, db_path):
     batch_id = _delivered_batch(client)
     _role(client, "retailer")
     _confirm(client, batch_id)
@@ -356,8 +366,9 @@ def test_a_shipment_after_receipt_is_still_a_separate_distributor_action(client,
         headers={"Idempotency-Key": "eeee1111-2222-4333-8444-000000000001"},
     )
 
-    assert response.status_code == 201
-    assert _status(db_path, batch_id) == "In Transit"
+    assert response.status_code == 409
+    assert "no further shipment update" in response.get_json()["error"]["message"]
+    assert _status(db_path, batch_id) == "Received by Retailer"
 
 
 # --- Idempotency and conflicts -----------------------------------------------------------
@@ -382,7 +393,7 @@ def test_repeated_request_with_the_same_key_creates_no_duplicate(client, db_path
 def test_same_key_for_a_different_batch_is_a_conflict(client, db_path):
     first_batch = _delivered_batch(client, key_prefix="aaaa0000-1111-4222-8333-")
     second_batch = _register(client, key="aaaa0000-1111-4222-8333-000000000099", product_name="Wheat")
-    _ship(client, second_batch, "Delivered to Retailer", "aaaa0000-1111-4222-8333-000000000098")
+    _advance(client, second_batch, "Delivered to Retailer")
     _role(client, "retailer")
     key = "bbbb0000-1111-4222-8333-000000000001"
     _confirm(client, first_batch, key=key)
@@ -449,9 +460,9 @@ def test_full_chain_is_valid_after_the_receipt(client, db_path):
 
     ledger = client.get("/api/ledger").get_json()
 
-    assert ledger["count"] == 4
+    assert ledger["count"] == 6
     assert [block["event_type"] for block in ledger["blocks"]] == [
-        "GENESIS", "PRODUCT_REGISTERED", "SHIPMENT_UPDATED", "RECEIPT_CONFIRMED",
+        "GENESIS", "PRODUCT_REGISTERED", "SHIPMENT_UPDATED", "SHIPMENT_UPDATED", "SHIPMENT_UPDATED", "RECEIPT_CONFIRMED",
     ]
 
 

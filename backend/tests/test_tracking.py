@@ -48,6 +48,8 @@ def _complete_flow(client):
     _role(client, "distributor")
     client.post("/api/shipments", json={"batch_id": batch_id, "status": "Shipped", "note": "Left the farm"},
                 headers={"Idempotency-Key": "bbbb2222-cccc-4ddd-8eee-000000000301"})
+    client.post("/api/shipments", json={"batch_id": batch_id, "status": "In Transit"},
+                headers={"Idempotency-Key": "bbbb2222-cccc-4ddd-8eee-000000000303"})
     client.post("/api/shipments", json={"batch_id": batch_id, "status": "Delivered to Retailer"},
                 headers={"Idempotency-Key": "bbbb2222-cccc-4ddd-8eee-000000000302"})
     _role(client, "retailer")
@@ -121,8 +123,10 @@ def test_registration_shipment_and_receipt_events_appear_in_order(client):
     body = client.get(f"/api/tracking/{batch_id}").get_json()
 
     types = [event["event_type"] for event in body["events"]]
-    assert types == ["PRODUCT_REGISTERED", "SHIPMENT_UPDATED", "SHIPMENT_UPDATED", "RECEIPT_CONFIRMED"]
-    assert body["count"] == 4
+    assert types == [
+        "PRODUCT_REGISTERED", "SHIPMENT_UPDATED", "SHIPMENT_UPDATED", "SHIPMENT_UPDATED", "RECEIPT_CONFIRMED",
+    ]
+    assert body["count"] == 5
     timestamps = [event["timestamp"] for event in body["events"]]
     assert timestamps == sorted(timestamps)
 
@@ -131,13 +135,13 @@ def test_events_show_actor_status_note_and_ledger_block_index(client):
     batch_id = _complete_flow(client)
     client.delete("/api/session")
 
-    registration, shipped, delivered, receipt = client.get(f"/api/tracking/{batch_id}").get_json()["events"]
+    registration, shipped, in_transit, delivered, receipt = client.get(f"/api/tracking/{batch_id}").get_json()["events"]
 
     assert (registration["actor_role"], registration["status"]) == ("farmer", "Registered")
     assert (shipped["actor_role"], shipped["status"], shipped["note"]) == ("distributor", "Shipped", "Left the farm")
     assert delivered["note"] is None
     assert (receipt["actor_role"], receipt["status"]) == ("retailer", "Received by Retailer")
-    assert [event["ledger_block_index"] for event in (registration, shipped, delivered, receipt)] == [1, 2, 3, 4]
+    assert [event["ledger_block_index"] for event in (registration, shipped, in_transit, delivered, receipt)] == [1, 2, 3, 4, 5]
 
 
 def test_unknown_batch_returns_not_found(client):
@@ -281,7 +285,7 @@ def test_scanning_the_qr_opens_the_tracking_page_without_a_session(client):
     assert scanned_batch_id == batch_id
     assert body["batch"]["current_status"] == "Received by Retailer"
     assert [event["event_type"] for event in body["events"]] == [
-        "PRODUCT_REGISTERED", "SHIPMENT_UPDATED", "SHIPMENT_UPDATED", "RECEIPT_CONFIRMED",
+        "PRODUCT_REGISTERED", "SHIPMENT_UPDATED", "SHIPMENT_UPDATED", "SHIPMENT_UPDATED", "RECEIPT_CONFIRMED",
     ]
 
 

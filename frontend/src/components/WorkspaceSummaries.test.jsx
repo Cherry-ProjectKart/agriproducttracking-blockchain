@@ -25,6 +25,12 @@ vi.mock('../services/receiptService.js', () => ({
   confirmReceipt: vi.fn(),
 }));
 
+const NEXT_STATUS = {
+  Registered: ['Shipped'],
+  Shipped: ['In Transit'],
+  'In Transit': ['Delivered to Retailer'],
+};
+
 function batch(id, status, createdAt = '2026-11-26T10:00:00.000Z') {
   return {
     id,
@@ -35,6 +41,7 @@ function batch(id, status, createdAt = '2026-11-26T10:00:00.000Z') {
     unit: 'kg',
     harvest_date: '2026-10-15',
     current_status: status,
+    next_statuses: NEXT_STATUS[status] ?? [],
     created_at: createdAt,
   };
 }

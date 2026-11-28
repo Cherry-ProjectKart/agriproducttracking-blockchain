@@ -3,18 +3,20 @@ import { createSubmissionKey } from '../../services/batchService.js';
 import { ApiError } from '../../services/apiClient.js';
 import { createShipment, fetchShipmentBatches } from '../../services/shipmentService.js';
 import { formatQuantity, formatTimestamp } from '../batches/batchFormatters.js';
+import BatchHistoryPanel from '../history/BatchHistoryPanel.jsx';
 import WorkspaceSummary from '../WorkspaceSummary.jsx';
 import {
   EMPTY_SHIPMENT_FORM,
   NOTE_MAX_LENGTH,
-  SHIPMENT_STATUSES,
   buildShipmentPayload,
+  shipmentStatusModifier,
   validateShipmentForm,
 } from '../../utils/shipmentValidation.js';
 
 const LIST_ERROR = 'Could not load the batches. Make sure the backend is running.';
 const NETWORK_ERROR = 'Could not reach the server. The shipment update was not saved; try again.';
 const GENERIC_ERROR = 'The shipment update could not be saved. Please try again.';
+const NO_NEXT_MOVEMENT = 'This batch has no further shipment update.';
 const FIELD_ORDER = ['batchId', 'status', 'note'];
 
 function messageFrom(error) {
@@ -25,9 +27,17 @@ function messageFrom(error) {
   return GENERIC_ERROR;
 }
 
+function StatusPill({ status }) {
+  return (
+    <span className={`shipment-status-pill shipment-status-pill--${shipmentStatusModifier(status)}`}>{status}</span>
+  );
+}
+
 /**
- * Distributor shipment workspace: pick a registered batch, choose a shipment status, add an
- * optional note, and save. Rendered only for the distributor role.
+ * Distributor shipment workspace. Pick a registered batch, see its details and movement history,
+ * then record its next movement. A movement must follow the lifecycle, so only the next status is
+ * offered. Saving asks for confirmation first, because a movement is permanent on the ledger.
+ * Rendered only for the distributor role.
  */
 export default function DistributorShipmentPanel() {
   const [list, setList] = useState({ status: 'loading', batches: [] });
@@ -35,9 +45,11 @@ export default function DistributorShipmentPanel() {
   const [form, setForm] = useState(EMPTY_SHIPMENT_FORM);
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState(null);
+  const [confirming, setConfirming] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [saved, setSaved] = useState(null);
   const [submissionKey, setSubmissionKey] = useState(createSubmissionKey);
+  const [historyRequest, setHistoryRequest] = useState(null);
 
   const loadBatches = useCallback(async (signal) => {
     setList((current) => ({ ...current, status: 'loading' }));
@@ -57,15 +69,41 @@ export default function DistributorShipmentPanel() {
   }, [loadBatches]);
 
   const selected = list.batches.find((batch) => batch.batch_id === selectedId) ?? null;
+  const allowed = selected ? selected.next_statuses : [];
 
-  function changeForm(name, value) {
-    setForm((current) => ({ ...current, [name]: value }));
+  // Keep the status on the only movement the selected batch can take, including after a refresh.
+  useEffect(() => {
+    if (!selected) return;
+    setForm((current) =>
+      selected.next_statuses.includes(current.status)
+        ? current
+        : { ...current, status: selected.next_statuses[0] ?? '' },
+    );
+  }, [selected]);
+
+  function chooseBatch(batch) {
+    setSelectedId(batch.batch_id);
+    setForm((current) => ({ ...current, status: batch.next_statuses[0] ?? '' }));
     setErrors((current) => {
-      if (!(name in current)) return current;
       const next = { ...current };
-      delete next[name];
+      delete next.batchId;
       return next;
     });
+    setFormError(null);
+    setConfirming(false);
+    setSaved(null);
+    setHistoryRequest((previous) => ({ batchId: batch.batch_id, nonce: (previous?.nonce ?? 0) + 1 }));
+  }
+
+  function changeNote(value) {
+    setForm((current) => ({ ...current, note: value }));
+    setErrors((current) => {
+      if (!('note' in current)) return current;
+      const next = { ...current };
+      delete next.note;
+      return next;
+    });
+    setConfirming(false);
     setSubmissionKey(createSubmissionKey());
   }
 
@@ -74,27 +112,37 @@ export default function DistributorShipmentPanel() {
     if (first) document.getElementById(`shipment-${first}`)?.focus();
   }
 
-  async function handleSubmit(event) {
+  function requestConfirmation(event) {
     event.preventDefault();
     if (submitting) return;
 
-    const found = validateShipmentForm({ batchId: selectedId, ...form });
+    const found = validateShipmentForm({ batchId: selectedId, allowedStatuses: allowed, ...form });
+    if (selected && allowed.length === 0) found.status = NO_NEXT_MOVEMENT;
     setErrors(found);
     setFormError(null);
     setSaved(null);
     if (Object.keys(found).length > 0) {
+      setConfirming(false);
       focusFirstInvalid(found);
       return;
     }
+    setConfirming(true);
+  }
 
+  async function confirmAndRecord() {
+    if (submitting) return;
     setSubmitting(true);
+    setFormError(null);
     try {
       const result = await createShipment(buildShipmentPayload({ batchId: selectedId, ...form }), submissionKey);
       setSaved(result);
       setForm(EMPTY_SHIPMENT_FORM);
+      setConfirming(false);
       setSubmissionKey(createSubmissionKey());
+      setHistoryRequest((previous) => ({ batchId: selectedId, nonce: (previous?.nonce ?? 0) + 1 }));
       await loadBatches();
     } catch (error) {
+      setConfirming(false);
       setFormError(messageFrom(error));
       const details = error instanceof ApiError ? error.body?.error?.details : undefined;
       if (details && typeof details === 'object') {
@@ -105,10 +153,14 @@ export default function DistributorShipmentPanel() {
         setErrors(fieldErrors);
         focusFirstInvalid(fieldErrors);
       }
+      // A conflict usually means the batch moved on elsewhere: reload so the status shown is current.
+      if (error instanceof ApiError && error.status === 409) await loadBatches();
     } finally {
       setSubmitting(false);
     }
   }
+
+  const eligibleCount = list.batches.filter((batch) => batch.next_statuses.length > 0).length;
 
   return (
     <div className="shipment-panel">
@@ -131,6 +183,7 @@ export default function DistributorShipmentPanel() {
             label="Shipment summary"
             items={[
               { label: 'Batches available', value: list.batches.length },
+              { label: 'Ready for next movement', value: eligibleCount },
               { label: 'Shipped', value: list.batches.filter((b) => b.current_status === 'Shipped').length },
               { label: 'In transit', value: list.batches.filter((b) => b.current_status === 'In Transit').length },
               {
@@ -154,37 +207,41 @@ export default function DistributorShipmentPanel() {
                     <th scope="col">Origin</th>
                     <th scope="col">Quantity</th>
                     <th scope="col">Current status</th>
+                    <th scope="col">Next movement</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {list.batches.map((batch) => (
-                    <tr key={batch.batch_id} className={batch.batch_id === selectedId ? 'batch-table__row--selected' : undefined}>
-                      <td>
-                        <input
-                          type="radio"
-                          name="shipment-batch"
-                          value={batch.batch_id}
-                          checked={batch.batch_id === selectedId}
-                          onChange={() => {
-                            setSelectedId(batch.batch_id);
-                            setErrors((current) => {
-                              const next = { ...current };
-                              delete next.batchId;
-                              return next;
-                            });
-                          }}
-                          aria-label={`Select batch ${batch.batch_id}`}
-                        />
-                      </td>
-                      <td>
-                        <code className="batch-id">{batch.batch_id}</code>
-                      </td>
-                      <td>{batch.product_name}</td>
-                      <td>{batch.origin}</td>
-                      <td>{formatQuantity(batch.quantity, batch.unit)}</td>
-                      <td>{batch.current_status}</td>
-                    </tr>
-                  ))}
+                  {list.batches.map((batch) => {
+                    const canMove = batch.next_statuses.length > 0;
+                    return (
+                      <tr
+                        key={batch.batch_id}
+                        className={batch.batch_id === selectedId ? 'batch-table__row--selected' : undefined}
+                      >
+                        <td>
+                          <input
+                            type="radio"
+                            name="shipment-batch"
+                            value={batch.batch_id}
+                            checked={batch.batch_id === selectedId}
+                            disabled={!canMove}
+                            onChange={() => chooseBatch(batch)}
+                            aria-label={`Select batch ${batch.batch_id}`}
+                          />
+                        </td>
+                        <td>
+                          <code className="batch-id">{batch.batch_id}</code>
+                        </td>
+                        <td>{batch.product_name}</td>
+                        <td>{batch.origin}</td>
+                        <td>{formatQuantity(batch.quantity, batch.unit)}</td>
+                        <td>
+                          <StatusPill status={batch.current_status} />
+                        </td>
+                        <td>{canMove ? batch.next_statuses[0] : <span className="batch-list__empty">None</span>}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -197,6 +254,66 @@ export default function DistributorShipmentPanel() {
         ) : null}
       </section>
 
+      {selected ? (
+        <section className="workspace-card" aria-labelledby="shipment-details-heading">
+          <h2 id="shipment-details-heading" className="dashboard__section-heading">
+            Shipment details
+          </h2>
+          <dl className="batch-details__list">
+            <div>
+              <dt>Batch ID</dt>
+              <dd>
+                <code className="batch-id">{selected.batch_id}</code>
+              </dd>
+            </div>
+            <div>
+              <dt>Product</dt>
+              <dd>{selected.product_name}</dd>
+            </div>
+            <div>
+              <dt>Origin</dt>
+              <dd>{selected.origin}</dd>
+            </div>
+            <div>
+              <dt>Quantity</dt>
+              <dd>{formatQuantity(selected.quantity, selected.unit)}</dd>
+            </div>
+            <div>
+              <dt>Harvest date</dt>
+              <dd>{selected.harvest_date}</dd>
+            </div>
+            <div>
+              <dt>Registered on</dt>
+              <dd>{formatTimestamp(selected.created_at)}</dd>
+            </div>
+            <div>
+              <dt>Current status</dt>
+              <dd>
+                <StatusPill status={selected.current_status} />
+              </dd>
+            </div>
+            <div>
+              <dt>Next movement</dt>
+              <dd>{allowed.length > 0 ? allowed[0] : 'None. No further shipment update can be recorded.'}</dd>
+            </div>
+          </dl>
+          <p className="shipment-track-link">
+            <a href={`/track/${selected.batch_id}`} target="_blank" rel="noopener noreferrer">
+              Open the public tracking page for {selected.batch_id}
+            </a>
+          </p>
+        </section>
+      ) : null}
+
+      {selected ? (
+        <section className="workspace-card" aria-labelledby="shipment-history-heading">
+          <h2 id="shipment-history-heading" className="dashboard__section-heading">
+            Movement history
+          </h2>
+          <BatchHistoryPanel request={historyRequest} />
+        </section>
+      ) : null}
+
       {list.status === 'ready' && list.batches.length > 0 ? (
         <section className="workspace-card" aria-labelledby="shipment-form-heading">
           <h2 id="shipment-form-heading" className="dashboard__section-heading">
@@ -208,10 +325,10 @@ export default function DistributorShipmentPanel() {
               <strong>{selected.current_status}</strong>
             </p>
           ) : (
-            <p className="shipment-selected">Select a batch above to record its shipment.</p>
+            <p className="shipment-selected">Select a batch above to record its next movement.</p>
           )}
 
-          <form className="batch-form" onSubmit={handleSubmit} noValidate aria-busy={submitting}>
+          <form className="batch-form" onSubmit={requestConfirmation} noValidate aria-busy={submitting}>
             <p className="batch-form__hint">
               Fields marked <span className="required-mark" aria-hidden="true">*</span> are required.
             </p>
@@ -231,13 +348,16 @@ export default function DistributorShipmentPanel() {
                   id="shipment-status"
                   name="status"
                   value={form.status}
-                  disabled={submitting}
+                  disabled={submitting || allowed.length === 0}
                   aria-invalid={errors.status ? 'true' : 'false'}
                   aria-describedby={errors.status ? 'shipment-status-error' : undefined}
-                  onChange={(event) => changeForm('status', event.target.value)}
+                  onChange={(event) => {
+                    setForm((current) => ({ ...current, status: event.target.value }));
+                    setConfirming(false);
+                  }}
                 >
-                  <option value="">Choose a status</option>
-                  {SHIPMENT_STATUSES.map((status) => (
+                  <option value="">{allowed.length === 0 ? 'No movement available' : 'Choose a status'}</option>
+                  {allowed.map((status) => (
                     <option key={status} value={status}>
                       {status}
                     </option>
@@ -261,7 +381,7 @@ export default function DistributorShipmentPanel() {
                   disabled={submitting}
                   aria-invalid={errors.note ? 'true' : 'false'}
                   aria-describedby={errors.note ? 'shipment-note-error' : 'shipment-note-hint'}
-                  onChange={(event) => changeForm('note', event.target.value)}
+                  onChange={(event) => changeNote(event.target.value)}
                 />
                 <p id="shipment-note-hint" className="batch-form__hint">
                   One line, up to {NOTE_MAX_LENGTH} characters.
@@ -275,16 +395,40 @@ export default function DistributorShipmentPanel() {
             </div>
 
             <div className="form-actions">
-              <button type="submit" className="btn btn--primary" disabled={submitting}>
-                {submitting ? 'Saving…' : 'Save shipment update'}
+              <button type="submit" className="btn btn--primary" disabled={submitting || !selected || allowed.length === 0}>
+                Save shipment update
               </button>
+            </div>
+          </form>
+
+          {confirming && selected ? (
+            <div className="shipment-confirm" role="group" aria-labelledby="shipment-confirm-heading">
+              <h3 id="shipment-confirm-heading">Confirm shipment update</h3>
+              <p>
+                Record <strong>{form.status}</strong> for <code className="batch-id">{selected.batch_id}</code>. The
+                batch is currently <strong>{selected.current_status}</strong>. This is added to the ledger and cannot
+                be undone.
+              </p>
+              <div className="form-actions">
+                <button type="button" className="btn btn--primary" onClick={confirmAndRecord} disabled={submitting}>
+                  {submitting ? 'Saving…' : 'Confirm and record'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--secondary"
+                  onClick={() => setConfirming(false)}
+                  disabled={submitting}
+                >
+                  Cancel
+                </button>
+              </div>
               {submitting ? (
                 <span role="status" className="form-status">
                   Saving shipment update…
                 </span>
               ) : null}
             </div>
-          </form>
+          ) : null}
         </section>
       ) : null}
 

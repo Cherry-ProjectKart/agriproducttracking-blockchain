@@ -13,8 +13,11 @@ const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 
 export const EMPTY_SHIPMENT_FORM = Object.freeze({ status: '', note: '' });
 
-/** Returns a map of field name to message. An empty object means the form is valid. */
-export function validateShipmentForm({ batchId, status, note }) {
+/**
+ * Returns a map of field name to message. An empty object means the form is valid.
+ * allowedStatuses is the list of statuses the selected batch may move to next (from the server).
+ */
+export function validateShipmentForm({ batchId, status, note, allowedStatuses = SHIPMENT_STATUSES }) {
   const errors = {};
 
   if (!batchId) {
@@ -25,8 +28,8 @@ export function validateShipmentForm({ batchId, status, note }) {
 
   if (!status) {
     errors.status = 'Choose a shipment status.';
-  } else if (!SHIPMENT_STATUSES.includes(status)) {
-    errors.status = `Choose one of: ${SHIPMENT_STATUSES.join(', ')}.`;
+  } else if (!allowedStatuses.includes(status)) {
+    errors.status = `Choose one of: ${allowedStatuses.join(', ')}.`;
   }
 
   const trimmed = note.trim();
@@ -47,4 +50,23 @@ export function buildShipmentPayload({ batchId, status, note }) {
     status,
     note: trimmed || null,
   };
+}
+
+/** CSS modifier for a status pill, so each status has a readable, consistent colour. */
+export function shipmentStatusModifier(status) {
+  switch (status) {
+    case 'Registered':
+    case 'CREATED':
+      return 'registered';
+    case 'Shipped':
+      return 'shipped';
+    case 'In Transit':
+      return 'in-transit';
+    case 'Delivered to Retailer':
+      return 'delivered';
+    case 'Received by Retailer':
+      return 'received';
+    default:
+      return 'other';
+  }
 }

@@ -61,6 +61,11 @@ def _scenario(client):
     )
     client.post(
         "/api/shipments",
+        json={"batch_id": batch["batch_id"], "status": "In Transit"},
+        headers={"Idempotency-Key": "bbbb2222-cccc-4ddd-8eee-000000000203"},
+    )
+    client.post(
+        "/api/shipments",
         json={"batch_id": batch["batch_id"], "status": "Delivered to Retailer"},
         headers={"Idempotency-Key": "bbbb2222-cccc-4ddd-8eee-000000000202"},
     )
@@ -102,8 +107,10 @@ def test_history_includes_registration_shipment_and_receipt_events(client):
     history = client.get(f"/api/history/{batch_id}").get_json()
 
     types = [event["event_type"] for event in history["events"]]
-    assert types == ["PRODUCT_REGISTERED", "SHIPMENT_UPDATED", "SHIPMENT_UPDATED", "RECEIPT_CONFIRMED"]
-    assert history["count"] == 4
+    assert types == [
+        "PRODUCT_REGISTERED", "SHIPMENT_UPDATED", "SHIPMENT_UPDATED", "SHIPMENT_UPDATED", "RECEIPT_CONFIRMED",
+    ]
+    assert history["count"] == 5
     assert history["batch"]["current_status"] == "Received by Retailer"
 
 
@@ -113,13 +120,14 @@ def test_history_events_show_actor_status_note_and_block_index(client):
 
     events = client.get(f"/api/history/{batch_id}").get_json()["events"]
 
-    registration, first_shipment, second_shipment, receipt = events
+    registration, first_shipment, second_shipment, third_shipment, receipt = events
     assert (registration["label"], registration["actor_role"], registration["status"]) == ("Registration", "farmer", "Registered")
     assert (first_shipment["label"], first_shipment["actor_role"], first_shipment["status"]) == ("Shipment", "distributor", "Shipped")
     assert first_shipment["note"] == "Left the farm"
-    assert second_shipment["note"] is None
+    assert (second_shipment["status"], second_shipment["note"]) == ("In Transit", None)
+    assert (third_shipment["status"], third_shipment["note"]) == ("Delivered to Retailer", None)
     assert (receipt["label"], receipt["actor_role"], receipt["status"]) == ("Receipt", "retailer", "Received by Retailer")
-    assert [event["ledger_block_index"] for event in events] == [1, 2, 3, 4]
+    assert [event["ledger_block_index"] for event in events] == [1, 2, 3, 4, 5]
 
 
 def test_history_is_in_chronological_order(client):
@@ -145,7 +153,7 @@ def test_history_is_restricted_to_the_requested_batch(client):
     first_events = client.get(f"/api/history/{first}").get_json()["events"]
     second_events = client.get(f"/api/history/{second}").get_json()["events"]
 
-    assert len(first_events) == 4
+    assert len(first_events) == 5
     assert len(second_events) == 1
     assert second_events[0]["event_type"] == "PRODUCT_REGISTERED"
     assert {event["event_id"] for event in first_events}.isdisjoint({event["event_id"] for event in second_events})
@@ -195,8 +203,8 @@ def test_unmodified_ledger_is_valid(client):
     assert body["result"] == "valid"
     assert body["failures"] == []
     assert body["first_failing_block"] is None
-    assert body["checked_blocks"] == 5  # genesis, registration, two shipments, receipt
-    assert body["latest_block_index"] == 4
+    assert body["checked_blocks"] == 6  # genesis, registration, three shipments, receipt
+    assert body["latest_block_index"] == 5
     assert all(check["passed"] for check in body["checks"])
 
 
@@ -343,7 +351,7 @@ def test_removed_ledger_leaves_the_registration_events_uncovered(client, db_path
 
     assert result["result"] == "invalid"
     assert _failures(result, "genesis"), "an empty ledger has no genesis block"
-    assert len(_failures(result, "event_coverage")) == 4
+    assert len(_failures(result, "event_coverage")) == 5
 
 
 def test_forged_hash_consistent_with_altered_data_still_breaks_the_next_link(client, db_path):
@@ -434,5 +442,5 @@ def test_registration_shipment_and_receipt_still_work_after_verification(client)
     client.get("/api/ledger/verify")
 
     assert client.get(f"/api/batches/by-batch-id/{batch_id}").get_json()["batch"]["current_status"] == "Received by Retailer"
-    assert client.get("/api/ledger").get_json()["count"] == 5
+    assert client.get("/api/ledger").get_json()["count"] == 6
     assert client.get("/api/health").status_code == 200

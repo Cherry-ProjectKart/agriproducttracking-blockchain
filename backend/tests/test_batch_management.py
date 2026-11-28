@@ -311,6 +311,13 @@ def test_invalid_edit_bodies_are_rejected(client, db_path, body):
 def _ship_and_receive(client, batch_id):
     client.delete("/api/session")
     sign_in(client, "distributor")
+    for status, prefix in (("Shipped", "shipA"), ("In Transit", "shipB")):
+        step = client.post(
+            "/api/shipments",
+            json={"batch_id": batch_id, "status": status},
+            headers={"Idempotency-Key": _key(prefix)},
+        )
+        assert step.status_code == 201
     shipped = client.post(
         "/api/shipments",
         json={"batch_id": batch_id, "status": "Delivered to Retailer", "note": "Delivered in full."},
